@@ -11,20 +11,17 @@
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
 
-
 #define READ_QUERY 1
 #define WRITE_QUERY 2
 #define NEW_MASTER 3
 #define SET_SLAVES 4
+#define ANZAHL_HOSTS 2
 
-
-const char HOSTS[2][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
-const int NUM_HOSTS = 2;
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
 
 int slaves = 0;
 int current_master = 0; 
-int active[2] = {1, 1};
-
+int active[ANZAHL_HOSTS] = {1, 1};
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
 
@@ -38,13 +35,14 @@ POST /new_master MASTER_IP MASTER_PORT\n\
 POST /number_of_slaves NUMBER_OF_SLAVES\n";
 
 char http_post[] = "POST %s HTTP/1.1\r\n\
-Content-Length: %d\r\n\r\n\
+Content-Length: %d\r\n\
+Connection: Keep-Alive\r\n\r\n\
 %s";
 
 char http_response[] = "HTTP/1.1 200 OK\r\n\
-Content-Length: %d\r\n\r\n\
+Content-Length: %d\r\n\
+Connection: Keep-Alive\r\n\r\n\
 %s";
-
 
 char answer2[] = "HTTP/1.1 204 No Content\r\n\r\n";
 
@@ -52,6 +50,11 @@ char answer2[] = "HTTP/1.1 204 No Content\r\n\r\n";
 
 
 int get_socket(int host_nr) {
+
+#ifndef NDEBUG
+    printf("get socket for host %d\n", host_nr);
+#endif  
+
     int port = atoi(HOSTS[host_nr][1]);
 
     int sockfd;
@@ -105,7 +108,7 @@ int get_content_lenght(const char *buf, const int size) {
 
 
 int get_request(int sock, char *buf, int *offset, int *action, char **content, int *length) {
-#ifndef NDEBUG
+#ifndef NDEBUG 
     printf("Offset: %d\n", *offset);
 #endif
     int recv_size = 0;
@@ -297,9 +300,10 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
 }
 
 
-int handle_request(int sock, int action, char *content, int content_length) {
+int handle_request(int sock, int action, char *content, int content_length, int *socket_list) {
 
 #ifndef NDEBUG    
+    printf ("handle_request\n");
     printf("ACTION: %d\n", action);
 #endif
 
@@ -307,11 +311,12 @@ int handle_request(int sock, int action, char *content, int content_length) {
     case READ_QUERY: {
         time_t t;
         srand((unsigned) time(&t));
-        int r = rand() % NUM_HOSTS;
+        int r = rand() % ANZAHL_HOSTS;
 #ifndef NDEBUG
         printf("Query sent to host %d\n", r);
 #endif
-        int socketfd = get_socket(r);
+        // int socketfd = get_socket(r);
+        int socketfd = socket_list[r];
 
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
@@ -333,7 +338,8 @@ int handle_request(int sock, int action, char *content, int content_length) {
         break;
     }
     case WRITE_QUERY: {
-        int socketfd = get_socket(current_master);
+        // int socketfd = get_socket(current_master);
+        int socketfd = socket_list[current_master];
 
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
@@ -348,6 +354,11 @@ int handle_request(int sock, int action, char *content, int content_length) {
 
         get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
         asprintf(&buf, http_response, res_content_length, res_content);
+
+#ifndef NDEBUG
+        printf("Sending response!\n%s\n", buf);
+#endif
+
 
         send(sock, buf, strlen(buf), 0);
         free(buf);
@@ -367,11 +378,24 @@ int handle_request(int sock, int action, char *content, int content_length) {
 
 
 void new_connection(int sock) {
+
+    printf ("new_connection\n");
+
     int action = 0;
     int content_length = 0;
     int offset = 0;
     char buf[BUFFERSIZE];
     char *content = NULL;
+
+    int socket_list[ANZAHL_HOSTS];
+
+    // initialize socket list. one socket for each host.
+    int i=0;
+    while (i < ANZAHL_HOSTS) {
+        socket_list[i] = get_socket(i);
+        ++i;
+    }
+
     while (1) {
         action = 0;
         offset = 0;
@@ -387,8 +411,16 @@ void new_connection(int sock) {
 #ifndef NDEBUG
         printf("CONTENT OF: %s\n", content);
 #endif
-        if (handle_request(sock, action, content, content_length) == -1) {
+        if (handle_request(sock, action, content, content_length, socket_list) == -1) {
             close(sock);
+
+            // close all connections to hosts
+            int i=0;
+            while (i < ANZAHL_HOSTS) {
+                close(socket_list[i]);
+                ++i;
+            }
+
 #ifndef NDEBUG
             printf("connection closed\n");
 #endif
@@ -442,7 +474,7 @@ int main(int argc, char const *argv[])
 
     while(1) {
         int new_sock = accept(sock, &client_addr, &client_addrlen);
-
+        
         if (new_sock < 0) {
             fprintf(stderr, "ERROR on accept\n");
             exit(1);
