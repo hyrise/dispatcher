@@ -18,14 +18,12 @@
 #define SET_SLAVES 4
 
 
-
-const char HOSTS[4][2][16] = {{"127.0.0.1", "9010"}, {"127.0.0.1", "9011"}, 
-                    {"127.0.0.1", "9012"}, {"127.0.0.1", "9013"}};
-const int NUM_HOSTS = 4;
+const char HOSTS[2][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
+const int NUM_HOSTS = 2;
 
 int slaves = 0;
 int current_master = 0; 
-int active[4] = {1, 1, 1, 1};
+int active[2] = {1, 1};
 
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
@@ -78,13 +76,22 @@ int get_socket(int host_nr) {
 }
 
 
+const char *strnstr(const char *haystack, char *needle, size_t len_haystack, size_t len_needle) {
+    if (len_haystack == 0) return haystack; /* degenerate edge case */
+    if (len_needle == 0) return haystack; /* degenerate edge case */
+    while (haystack = strchr(haystack, needle[0])) {
+        if (!strncmp(haystack, needle, len_needle)) return haystack;
+        haystack++; }
+    return NULL;
+}
 
 int get_content_lenght(const char *buf, const int size) {
-    char *hit_ptr;
+    const char *hit_ptr;
     int content_length;
-    hit_ptr = strnstr(buf, "Content-Length:", size);
+    hit_ptr = strnstr(buf, "Content-Length:", size, 15);
+
     if (hit_ptr == NULL) {
-        printf("no Content-Length specified\n");
+        printf("ERROR: no Content-Length specified\n");
         return -1;
     }
     if (sscanf(hit_ptr, "Content-Length: %d", &content_length) != 1) {
@@ -98,7 +105,9 @@ int get_content_lenght(const char *buf, const int size) {
 
 
 int get_request(int sock, char *buf, int *offset, int *action, char **content, int *length) {
+#ifndef NDEBUG
     printf("Offset: %d\n", *offset);
+#endif
     int recv_size = 0;
     int first_line_received = 0;
     int header_received = 0;
@@ -106,13 +115,15 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
     char method[16], recource[32];
 
     while ((recv_size = read(sock, buf+(*offset), BUFFERSIZE-(*offset))) > 0) {
+#ifndef NDEBUG        
         printf("received %d bytes\n", recv_size);
         printf("%s\n", buf);
+#endif
         *offset += recv_size;
 
         if (!first_line_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\n", *offset);
+            hit_ptr = strnstr(buf, "\n", *offset, 1);
             if (hit_ptr == NULL) {
                 continue;
             }
@@ -121,7 +132,9 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
             // it can be parsed for http method and recource
             int n;
             if ((n = sscanf(buf, "%15s %31s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
+#ifndef NDEBUG                
                 printf("HTTP Request: Method %s  Recource: %s\n", method, recource);
+#endif
                 if (strcmp(recource, "/jsonQuery") == 0)
                     *action = READ_QUERY;
                 else if (strcmp(recource, "/jsonWrite") == 0)
@@ -137,7 +150,7 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
                 }
             }
             else {
-                printf("ERROR----------------------- scanf %d\n", n);
+                printf("ERROR scanf %d\n", n);
                 return -1;
             }
         }
@@ -147,32 +160,45 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
         // check for content next
         if (!header_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\r\n\r\n", *offset);
+            hit_ptr = strnstr(buf, "\r\n\r\n", *offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
-                printf("not FOUND\n");
+                printf("ERROR: not FOUND\n");
                 continue;
             }
             header_received = 1;
             // header delimiter reached
             *length = get_content_lenght(buf, *offset);
-            printf("Content-Length: %d\n", *length);
+            if (length == -1)
+            {
+                printf("ERROR: Could not read content length!");
+                exit(1);
+            } else {
+#ifndef NDEBUG
+               printf("Header Received #### Content-Length: %d\n", *length);
+#endif
+            }
         }
 
         // complete header was received
         // check whether message is complete
         if (http_body_start != NULL) {
             if (((http_body_start - buf) + *length) == *offset) {
+#ifndef NDEBUG
                 printf("complete message received\n header: %ld\n", http_body_start-buf);
+#endif
                 *content = http_body_start;
                 return 0;
                 //perform_action(sock, http_body_start, content_length, requested_action);
             }
         }
+#ifndef NDEBUG
         printf("Read...\n");
+#endif
     }
-
+#ifndef NDEBUG
     printf("End of reception\n");
+#endif
 
     if (recv_size == -1) {
         fprintf(stderr, "ERROR while receiving data\n");
@@ -192,13 +218,15 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
     char *http_body_start = NULL;
 
     while ((recv_size = read(sock, buf+(*offset), BUFFERSIZE-(*offset))) > 0) {
+#ifndef NDEBUG
         printf("received %d bytes\n", recv_size);
         printf("%s\n", buf);
+#endif
         *offset += recv_size;
 
         if (!first_line_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\n", *offset);
+            hit_ptr = strnstr(buf, "\n", *offset, 1);
             if (hit_ptr == NULL) {
                 continue;
             }
@@ -207,7 +235,9 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
             // it can be parsed for http method and recource
             int n;
             if ((n = sscanf(buf, "HTTP/1.1 %d", status)) == 1) {
+#ifndef NDEBUG
                 printf("HTTP Response status: %d\n", *status);
+#endif
             }
             else {
                 printf("ERROR----------------------- scanf %d\n", n);
@@ -220,7 +250,7 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
         // check for content next
         if (!header_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\r\n\r\n", *offset);
+            hit_ptr = strnstr(buf, "\r\n\r\n", *offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
                 printf("not FOUND\n");
@@ -229,23 +259,31 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
             header_received = 1;
             // header delimiter reached
             *content_length = get_content_lenght(buf, *offset);
+#ifndef NDEBUG
             printf("Content-Length: %d\n", *content_length);
+#endif
         }
 
         // complete header was received
         // check whether message is complete
         if (http_body_start != NULL) {
             if (((http_body_start - buf) + *content_length) == *offset) {
+#ifndef NDEBUG
                 printf("complete message received\n header: %ld\n", http_body_start-buf);
+#endif
                 *content = http_body_start;
                 return 0;
                 //perform_action(sock, http_body_start, content_length, requested_action);
             }
         }
+#ifndef NDEBUG
         printf("Read...\n");
+#endif
     }
 
+#ifndef NDEBUG
     printf("End of reception\n");
+#endif
 
     if (recv_size == -1) {
         fprintf(stderr, "ERROR while receiving data\n");
@@ -260,20 +298,23 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
 
 
 int handle_request(int sock, int action, char *content, int content_length) {
+
+#ifndef NDEBUG    
     printf("ACTION: %d\n", action);
+#endif
 
     switch (action) {
     case READ_QUERY: {
         time_t t;
         srand((unsigned) time(&t));
-        int r = rand() % 4;
+        int r = rand() % NUM_HOSTS;
+#ifndef NDEBUG
         printf("Query sent to host %d\n", r);
-
+#endif
         int socketfd = get_socket(r);
 
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
-        printf("%s\n", buf);
         send(socketfd, buf, strlen(buf), 0);
         free(buf);
 
@@ -285,7 +326,7 @@ int handle_request(int sock, int action, char *content, int content_length) {
 
         get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
         asprintf(&buf, http_response, res_content_length, res_content);
-        printf("%s\n", buf);
+
         send(sock, buf, strlen(buf), 0);
         free(buf);
 
@@ -296,11 +337,20 @@ int handle_request(int sock, int action, char *content, int content_length) {
 
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
-        printf("%s\n", buf);
         send(socketfd, buf, strlen(buf), 0);
         free(buf);
 
+        int res_content_length = 0;
+        char res_buf[BUFFERSIZE];
+        char *res_content;
+        int offset = 0;
+        int status = 0;
 
+        get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
+        asprintf(&buf, http_response, res_content_length, res_content);
+
+        send(sock, buf, strlen(buf), 0);
+        free(buf);
         break;
     }
     case NEW_MASTER:
@@ -329,13 +379,19 @@ void new_connection(int sock) {
         content = NULL;
         if (get_request(sock, buf, &offset, &action, &content, &content_length) == -1) {
             close(sock);
+#ifndef NDEBUG
             printf("connection closed\n");
+#endif
             exit(1);
         }
+#ifndef NDEBUG
         printf("CONTENT OF: %s\n", content);
+#endif
         if (handle_request(sock, action, content, content_length) == -1) {
             close(sock);
+#ifndef NDEBUG
             printf("connection closed\n");
+#endif
             exit(1);
         }
     }
@@ -413,7 +469,9 @@ int main(int argc, char const *argv[])
 
         if (client_addr.sa_family == AF_INET){
             struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
+#ifndef NDEBUG            
             printf("client %d\n", client_addr_ip4->sin_addr.s_addr);
+#endif
         } else {
             /* not an IPv4 address */
         }
