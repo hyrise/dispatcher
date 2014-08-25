@@ -6,10 +6,13 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <pthread.h>
 
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
+
+#define MAX_THREADS 20000
 
 #define READ_QUERY 1
 #define WRITE_QUERY 2
@@ -17,11 +20,17 @@
 #define SET_SLAVES 4
 #define ANZAHL_HOSTS 2
 
+
+pthread_mutex_t global_lock;
+int query_nr = 0;   // used to schedule queries in round robin manner
+
+
 const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
 
 int slaves = 0;
 int current_master = 0; 
-int active[ANZAHL_HOSTS] = {1, 1};
+int active_hosts[ANZAHL_HOSTS] = {0, 1};
+int active_hosts_num = ANZAHL_HOSTS;
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
 
@@ -79,11 +88,11 @@ int get_socket(int host_nr) {
 }
 
 
-const char *strnstr(const char *haystack, char *needle, size_t len_haystack, size_t len_needle) {
-    if (len_haystack == 0) return haystack; /* degenerate edge case */
-    if (len_needle == 0) return haystack; /* degenerate edge case */
-    while (haystack = strchr(haystack, needle[0])) {
-        if (!strncmp(haystack, needle, len_needle)) return haystack;
+char *strnstr_(const char *haystack, char *needle, size_t len_haystack, size_t len_needle) {
+    if (len_haystack == 0) return (char *)haystack; /* degenerate edge case */
+    if (len_needle == 0) return (char *)haystack; /* degenerate edge case */
+    while ((haystack = strchr(haystack, needle[0]))) {
+        if (!strncmp(haystack, needle, len_needle)) return (char *)haystack;
         haystack++; }
     return NULL;
 }
@@ -91,7 +100,7 @@ const char *strnstr(const char *haystack, char *needle, size_t len_haystack, siz
 int get_content_lenght(const char *buf, const int size) {
     const char *hit_ptr;
     int content_length;
-    hit_ptr = strnstr(buf, "Content-Length:", size, 15);
+    hit_ptr = strnstr_(buf, "Content-Length:", size, 15);
 
     if (hit_ptr == NULL) {
         printf("ERROR: no Content-Length specified\n");
@@ -126,7 +135,7 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
 
         if (!first_line_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\n", *offset, 1);
+            hit_ptr = strnstr_(buf, "\n", *offset, 1);
             if (hit_ptr == NULL) {
                 continue;
             }
@@ -163,7 +172,7 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
         // check for content next
         if (!header_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\r\n\r\n", *offset, 4);
+            hit_ptr = strnstr_(buf, "\r\n\r\n", *offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
                 printf("ERROR: not FOUND\n");
@@ -172,10 +181,10 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
             header_received = 1;
             // header delimiter reached
             *length = get_content_lenght(buf, *offset);
-            if (length == -1)
+            if (*length == -1)
             {
                 printf("ERROR: Could not read content length!");
-                exit(1);
+                return -1;
             } else {
 #ifndef NDEBUG
                printf("Header Received #### Content-Length: %d\n", *length);
@@ -229,7 +238,7 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
 
         if (!first_line_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\n", *offset, 1);
+            hit_ptr = strnstr_(buf, "\n", *offset, 1);
             if (hit_ptr == NULL) {
                 continue;
             }
@@ -253,7 +262,7 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
         // check for content next
         if (!header_received) {
             char *hit_ptr;
-            hit_ptr = strnstr(buf, "\r\n\r\n", *offset, 4);
+            hit_ptr = strnstr_(buf, "\r\n\r\n", *offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
                 printf("not FOUND\n");
@@ -309,9 +318,10 @@ int handle_request(int sock, int action, char *content, int content_length, int 
 
     switch (action) {
     case READ_QUERY: {
-        time_t t;
-        srand((unsigned) time(&t));
-        int r = rand() % ANZAHL_HOSTS;
+        pthread_mutex_lock(&global_lock);
+        int r = query_nr % active_hosts_num;
+        query_nr++;
+        pthread_mutex_unlock(&global_lock);
 #ifndef NDEBUG
         printf("Query sent to host %d\n", r);
 #endif
@@ -377,10 +387,8 @@ int handle_request(int sock, int action, char *content, int content_length, int 
 
 
 
-void new_connection(int sock) {
-
-    printf ("new_connection\n");
-
+void *new_connection(void *sock_p) {
+    int sock = *(int *)sock_p;
     int action = 0;
     int content_length = 0;
     int offset = 0;
@@ -406,7 +414,7 @@ void new_connection(int sock) {
 #ifndef NDEBUG
             printf("connection closed\n");
 #endif
-            exit(1);
+            return 0;
         }
 #ifndef NDEBUG
         printf("CONTENT OF: %s\n", content);
@@ -424,9 +432,10 @@ void new_connection(int sock) {
 #ifndef NDEBUG
             printf("connection closed\n");
 #endif
-            exit(1);
+            return 0;
         }
     }
+    close(sock);
 }
 
 
@@ -471,33 +480,29 @@ int main(int argc, char const *argv[])
     socklen_t client_addrlen = sizeof(client_addrlen);
     struct sockaddr client_addr;
 
+    pthread_t thread_ptrs[MAX_THREADS];
+    int thread_nr = 0;
+    int client_sockets[MAX_THREADS];
+
+    if (pthread_mutex_init(&global_lock, NULL) != 0) {
+        fprintf(stderr, "ERROR on mutex_init\n");
+        exit(1);
+    };
 
     while(1) {
-        int new_sock = accept(sock, &client_addr, &client_addrlen);
+        client_sockets[thread_nr] = accept(sock, &client_addr, &client_addrlen);
         
-        if (new_sock < 0) {
+        if (client_sockets[thread_nr] < 0) {
             fprintf(stderr, "ERROR on accept\n");
             exit(1);
         }
 
-        int pid;
 
-        pid = fork();
-
-        if (pid < 0) {
-            fprintf(stderr, "ERROR on fork\n");
+        if (pthread_create(thread_ptrs + thread_nr, NULL, &new_connection, client_sockets + thread_nr) != 0) {
+            fprintf(stderr, "ERROR: pthread_create failed()\n");
             exit(1);
         }
-
-        if (pid == 0) {
-            // clield process
-            close(sock);
-            new_connection(new_sock);
-            exit(0);
-        }
-        
-        // parent
-        close(new_sock);
+        thread_nr++;
 
         if (client_addr.sa_family == AF_INET){
             struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
@@ -508,14 +513,13 @@ int main(int argc, char const *argv[])
             /* not an IPv4 address */
         }
 
-
-
     }
 
-
-
-
-
+    int i;
+    for (i=0; i < thread_nr; i++) {
+        pthread_join(thread_ptrs[i], NULL);
+    }
+    pthread_mutex_destroy(&global_lock);
 
     return 0;
 }

@@ -11,9 +11,9 @@
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
+#define ANZAHL_HOSTS 2
 
-const char HOSTS[4][2][16] = {{"127.0.0.1", "9010"}, {"127.0.0.1", "9011"}, 
-                    {"127.0.0.1", "9012"}, {"127.0.0.1", "9013"}};
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
 
 char answer[] = "HTTP/1.1 200 OK\n\
 Content-Type: text/html\n\
@@ -117,7 +117,7 @@ int db_server(int i) {
 int main(int argc, char const *argv[]){
     int pid;
     int i;
-    for (i=0; i<3; i++) {
+    for (i=1; i<ANZAHL_HOSTS; i++) {
         pid = fork();
         if (pid == 0) {
             // clield process
@@ -125,7 +125,7 @@ int main(int argc, char const *argv[]){
             exit(0);
         }
     }
-    db_server(3);
+    db_server(0);
 
     return 0;
 }
