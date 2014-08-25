@@ -17,19 +17,23 @@
 #define READ_QUERY 1
 #define WRITE_QUERY 2
 #define NEW_MASTER 3
-#define SET_SLAVES 4
-#define ANZAHL_HOSTS 2
+#define SET_SLAVES_1 4
+#define SET_SLAVES_2 5
+#define SET_SLAVES_3 6
+
+
+#define ANZAHL_HOSTS 4
 
 
 pthread_mutex_t global_lock;
 int query_nr = 0;   // used to schedule queries in round robin manner
 
 
-const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}};
 
 int slaves = 0;
 int current_master = 0; 
-int active_hosts[ANZAHL_HOSTS] = {0, 1};
+int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3};
 int active_hosts_num = ANZAHL_HOSTS;
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
@@ -153,8 +157,18 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
                     *action = WRITE_QUERY;
                 else if (strcmp(recource, "/new_master") == 0)
                     *action = NEW_MASTER;
-                else if (strcmp(recource, "/number_of_slaves") == 0)
-                    *action = SET_SLAVES;
+                else if (strcmp(recource, "/number_of_slaves_1") == 0)
+                    *action = SET_SLAVES_1;
+                else if (strcmp(recource, "/number_of_slaves_2") == 0)
+                    *action = SET_SLAVES_2;
+                else if (strcmp(recource, "/number_of_slaves_3") == 0)
+                    *action = SET_SLAVES_3;
+                else {
+                    printf("ERROR! Unkown action! Resource: %s\n", recource);
+                }
+#ifndef NDEBUG                
+                printf("Resource: %s -> Action: %d\n", recource, *action);
+#endif
 
                 if ((strcmp(method, "POST") != 0) || (*action == 0)) {
                     send(sock, answer, sizeof(answer), 0);
@@ -316,6 +330,9 @@ int handle_request(int sock, int action, char *content, int content_length, int 
     printf("ACTION: %d\n", action);
 #endif
 
+    int new_number_of_slaves = -1;
+    char* slaves_num_char = "0";
+
     switch (action) {
     case READ_QUERY: {
         pthread_mutex_lock(&global_lock);
@@ -375,10 +392,32 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         break;
     }
     case NEW_MASTER:
+        printf("NEW MASTER INT TOWN!!!\n");
+
+        int tmp = active_hosts[0];
+        active_hosts[0] = active_hosts[active_hosts_num-1];
+        active_hosts[active_hosts_num-1] = tmp;
+        active_hosts_num = active_hosts_num-1;
+
         send(sock, answer2, sizeof(answer2), 0);
         break;
-    case SET_SLAVES:
+    case SET_SLAVES_1:
+        printf("SETSLAVES to 1\n");
+        active_hosts_num = 2;
         send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_2:
+        printf("SETSLAVES to 2\n");
+        active_hosts_num = 3;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_3:
+        printf("SETSLAVES to 3\n");
+        active_hosts_num = 4;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    default:
+        printf("ERROR: handle_request. Unkow ACTION.\n");
         break;
     }
 
