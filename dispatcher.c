@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <signal.h>
 
 
 #define MAXPENDING 5
@@ -22,19 +23,20 @@
 #define SET_SLAVES_3 6
 
 
-#define ANZAHL_HOSTS 4
+#define ANZAHL_HOSTS 2
 
 
 pthread_mutex_t global_lock;
 int query_nr = 0;   // used to schedule queries in round robin manner
 
 
-const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}};
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
 
 int slaves = 0;
 int current_master = 0; 
-int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3};
-int active_hosts_num = ANZAHL_HOSTS;
+int active_hosts[ANZAHL_HOSTS] = {0, 1};
+// int active_hosts_num = ANZAHL_HOSTS;
+int active_hosts_num = 1;
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
 
@@ -58,6 +60,7 @@ Connection: Keep-Alive\r\n\r\n\
 %s";
 
 char answer2[] = "HTTP/1.1 204 No Content\r\n\r\n";
+char answer3[] = "HTTP/1.1 500 ERROR\r\n\r\n";
 
 
 
@@ -332,11 +335,15 @@ int handle_request(int sock, int action, char *content, int content_length, int 
 
     int new_number_of_slaves = -1;
     char* slaves_num_char = "0";
-
+    int i=0;
     switch (action) {
     case READ_QUERY: {
         pthread_mutex_lock(&global_lock);
+
         int r = query_nr % active_hosts_num;
+
+
+        
         query_nr++;
         pthread_mutex_unlock(&global_lock);
 #ifndef NDEBUG
@@ -367,7 +374,7 @@ int handle_request(int sock, int action, char *content, int content_length, int 
     case WRITE_QUERY: {
         // int socketfd = get_socket(current_master);
         int socketfd = socket_list[current_master];
-
+        printf("send write to master: %d\n", current_master);
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
         send(socketfd, buf, strlen(buf), 0);
@@ -393,11 +400,25 @@ int handle_request(int sock, int action, char *content, int content_length, int 
     }
     case NEW_MASTER:
         printf("NEW MASTER INT TOWN!!!\n");
+        printf("old master: %d\n", current_master);
+        printf("old num hosts: %d\n", active_hosts_num);
 
         int tmp = active_hosts[0];
         active_hosts[0] = active_hosts[active_hosts_num-1];
         active_hosts[active_hosts_num-1] = tmp;
         active_hosts_num = active_hosts_num-1;
+        current_master = 1;
+
+
+        printf("new master: %d\n", current_master);
+        printf("new num hosts: %d\n", active_hosts_num);
+
+        printf("hosts:");
+        while (i<active_hosts_num) {
+            printf("%d.", active_hosts[i]);
+            ++i;
+        }
+        printf("\n");
 
         send(sock, answer2, sizeof(answer2), 0);
         break;
@@ -485,6 +506,9 @@ int main(int argc, char const *argv[])
         printf("USAGE: ./a.out PORT\n");
         exit(1);
     }
+
+    // ignore broken sockets
+    signal(SIGPIPE, SIG_IGN);
 
     const char *Host = "localhost"; 
     const char *Port = argv[1];
