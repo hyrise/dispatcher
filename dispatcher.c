@@ -510,7 +510,7 @@ int main(int argc, char const *argv[])
     // ignore broken sockets
     signal(SIGPIPE, SIG_IGN);
 
-    const char *Host = "localhost"; 
+    const char *Host = "0.0.0.0"; 
     const char *Port = argv[1];
     int n, sock, errno;
 
