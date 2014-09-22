@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <pthread.h>
@@ -21,22 +22,25 @@
 #define SET_SLAVES_1 4
 #define SET_SLAVES_2 5
 #define SET_SLAVES_3 6
+#define STATISTICS 7
 
-
-#define ANZAHL_HOSTS 2
+#define ANZAHL_HOSTS 4
 
 
 pthread_mutex_t global_lock;
 int query_nr = 0;   // used to schedule queries in round robin manner
+size_t number_of_read_queries;
+size_t number_of_write_queries;
 
-
-const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}};
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}};
 
 int slaves = 0;
 int current_master = 0; 
-int active_hosts[ANZAHL_HOSTS] = {0, 1};
+int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3};
 // int active_hosts_num = ANZAHL_HOSTS;
 int active_hosts_num = 1;
+
+int failoverdone = 0;
 
 char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
 
@@ -166,6 +170,8 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
                     *action = SET_SLAVES_2;
                 else if (strcmp(recource, "/number_of_slaves_3") == 0)
                     *action = SET_SLAVES_3;
+                else if (strcmp(recource, "/statistics") == 0)
+                    *action = STATISTICS;
                 else {
                     printf("ERROR! Unkown action! Resource: %s\n", recource);
                 }
@@ -272,6 +278,10 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
                 printf("ERROR----------------------- scanf %d\n", n);
                 return -1;
             }
+	    if (*status != 200) {
+	      printf("Status: %d\n", *status);
+	      return -1;
+	    }
         }
 
         // first line received and checked successfully
@@ -314,7 +324,7 @@ int get_response(int sock, char *buf, int *offset, int *status, char **content, 
     printf("End of reception\n");
 #endif
 
-    if (recv_size == -1) {
+    if (recv_size <= 0) {
         fprintf(stderr, "ERROR while receiving data\n");
         return -1;
     }
@@ -342,15 +352,13 @@ int handle_request(int sock, int action, char *content, int content_length, int 
 
         int r = query_nr % active_hosts_num;
 
-
-        
         query_nr++;
         pthread_mutex_unlock(&global_lock);
 #ifndef NDEBUG
         printf("Query sent to host %d\n", r);
 #endif
-        // int socketfd = get_socket(r);
-        int socketfd = socket_list[r];
+        //int socketfd = get_socket(r);
+        int socketfd = socket_list[active_hosts[r]];
 
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
@@ -363,7 +371,8 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         int offset = 0;
         int status = 0;
 
-        get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
+        if (get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length) != -1)
+	  	__sync_add_and_fetch(&number_of_read_queries, 1);
         asprintf(&buf, http_response, res_content_length, res_content);
 
         send(sock, buf, strlen(buf), 0);
@@ -372,9 +381,11 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         break;
     }
     case WRITE_QUERY: {
-        // int socketfd = get_socket(current_master);
+        //int socketfd = get_socket(current_master);
         int socketfd = socket_list[current_master];
+#ifndef NDEBUG
         printf("send write to master: %d\n", current_master);
+#endif
         char *buf;
         asprintf(&buf, http_post, "/jsonQuery", content_length, content);
         send(socketfd, buf, strlen(buf), 0);
@@ -386,7 +397,8 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         int offset = 0;
         int status = 0;
 
-        get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
+        if (get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length) != -1)
+	  __sync_add_and_fetch(&number_of_write_queries, 1);
         asprintf(&buf, http_response, res_content_length, res_content);
 
 #ifndef NDEBUG
@@ -395,10 +407,12 @@ int handle_request(int sock, int action, char *content, int content_length, int 
 
 
         send(sock, buf, strlen(buf), 0);
+
         free(buf);
         break;
     }
     case NEW_MASTER:
+      if(!failoverdone){
         printf("NEW MASTER INT TOWN!!!\n");
         printf("old master: %d\n", current_master);
         printf("old num hosts: %d\n", active_hosts_num);
@@ -421,6 +435,8 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         printf("\n");
 
         send(sock, answer2, sizeof(answer2), 0);
+	failoverdone = 1;
+      }
         break;
     case SET_SLAVES_1:
         printf("SETSLAVES to 1\n");
@@ -437,6 +453,19 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         active_hosts_num = 4;
         send(sock, answer2, sizeof(answer2), 0);
         break;
+    case STATISTICS:
+        ;
+        char *buf1;
+	char *buf2;
+	struct timeval tim;
+	gettimeofday(&tim, NULL);
+	char content[] = "{\"read\": %d, \"write\": %d, \"timestamp\": %f}\n";
+	int length = asprintf(&buf1, content, number_of_read_queries, 
+			      number_of_write_queries, tim.tv_sec+(tim.tv_usec/1000000.0)); 
+	asprintf(&buf2, http_response, length, buf1);
+	send(sock, buf2, strlen(buf2), 0);
+	return -1;
+	break;
     default:
         printf("ERROR: handle_request. Unkow ACTION.\n");
         break;
