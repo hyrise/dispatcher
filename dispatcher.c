@@ -31,7 +31,7 @@ pthread_mutex_t global_lock;
 int query_nr = 0;   // used to schedule queries in round robin manner
 size_t number_of_read_queries;
 size_t number_of_write_queries;
-
+int dispatcher_socket = 0;
 const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}};
 
 int slaves = 0;
@@ -48,8 +48,8 @@ char answer[] = "HTTP/1.0 200 OK\n\
 Content-Type: text/html\n\
 Content-Length: 155\r\n\r\n\
 Supported Operations:\n\
-POST /jsonQuery JSON_QUERY\n\
-POST /jsonWrite JSON_WRITE\n\
+POST /procedureRevenueSelect/ JSON_QUERY\n\
+POST /procedureRevenueInsert/ JSON_WRITE\n\
 POST /new_master MASTER_IP MASTER_PORT\n\
 POST /number_of_slaves NUMBER_OF_SLAVES\n";
 
@@ -67,7 +67,11 @@ char answer2[] = "HTTP/1.1 204 No Content\r\n\r\n";
 char answer3[] = "HTTP/1.1 500 ERROR\r\n\r\n";
 
 
-
+void term(int signum)
+{
+    printf("Received SIGTERM, exiting...\n");
+    close(dispatcher_socket);
+}
 
 int get_socket(int host_nr) {
 
@@ -158,9 +162,9 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
 #ifndef NDEBUG                
                 printf("HTTP Request: Method %s  Recource: %s\n", method, recource);
 #endif
-                if (strcmp(recource, "/jsonQuery") == 0)
+                if (strcmp(recource, "/procedureRevenueSelect/") == 0)
                     *action = READ_QUERY;
-                else if (strcmp(recource, "/jsonWrite") == 0)
+                else if (strcmp(recource, "/procedureRevenueInsert/") == 0)
                     *action = WRITE_QUERY;
                 else if (strcmp(recource, "/new_master") == 0)
                     *action = NEW_MASTER;
@@ -361,7 +365,7 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         int socketfd = socket_list[active_hosts[r]];
 
         char *buf;
-        asprintf(&buf, http_post, "/jsonQuery", content_length, content);
+        asprintf(&buf, http_post, "/procedureRevenueSelect/", content_length, content);
         send(socketfd, buf, strlen(buf), 0);
         free(buf);
 
@@ -387,7 +391,7 @@ int handle_request(int sock, int action, char *content, int content_length, int 
         printf("send write to master: %d\n", current_master);
 #endif
         char *buf;
-        asprintf(&buf, http_post, "/jsonQuery", content_length, content);
+        asprintf(&buf, http_post, "/procedureRevenueInsert/", content_length, content);
         send(socketfd, buf, strlen(buf), 0);
         free(buf);
 
@@ -536,12 +540,20 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
+    // handle sigterm
+    struct sigaction action;
+    memset(&action, 0, sizeof(struct sigaction));
+    action.sa_handler = term;
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGABRT, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+
     // ignore broken sockets
     signal(SIGPIPE, SIG_IGN);
 
     const char *Host = "0.0.0.0"; 
     const char *Port = argv[1];
-    int n, sock, errno;
+    int n, errno;
 
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
@@ -553,18 +565,18 @@ int main(int argc, char const *argv[])
         return 1;
     }
 
-    if ((sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
+    if ((dispatcher_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         fprintf(stderr, "can't create socket: %s\n", strerror(errno));
         return 2;
     }
 
-    if (bind(sock, res->ai_addr, res->ai_addrlen) < 0) {
-        close(sock);
+    if (bind(dispatcher_socket, res->ai_addr, res->ai_addrlen) < 0) {
+        close(dispatcher_socket);
         fprintf(stderr, "can't bind to socket: %s\n", strerror(errno));
         return 2;
     }
 
-    if (listen(sock, MAXPENDING) < 0) {
+    if (listen(dispatcher_socket, MAXPENDING) < 0) {
         fprintf(stderr, "can't listen to socket: %s\n", strerror(errno));
         return 2;
     }
@@ -582,7 +594,7 @@ int main(int argc, char const *argv[])
     };
 
     while(1) {
-        client_sockets[thread_nr] = accept(sock, &client_addr, &client_addrlen);
+        client_sockets[thread_nr] = accept(dispatcher_socket, &client_addr, &client_addrlen);
         
         if (client_sockets[thread_nr] < 0) {
             fprintf(stderr, "ERROR on accept\n");
@@ -611,6 +623,7 @@ int main(int argc, char const *argv[])
     for (i=0; i < thread_nr; i++) {
         pthread_join(thread_ptrs[i], NULL);
     }
+    close(dispatcher_socket);
     pthread_mutex_destroy(&global_lock);
 
     return 0;
