@@ -1,5 +1,12 @@
 
 
+dependencies:
+  pre:
+    - sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+    - sudo apt-get update; sudo apt-get install gcc-4.8 g++-4.8
+
 test:
   override:
     - make test
+    - rm unit_tests
+    - CXX=g++-4.8 make test
