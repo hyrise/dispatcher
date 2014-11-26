@@ -23,10 +23,14 @@
 #define SET_SLAVES_1 4
 #define SET_SLAVES_2 5
 #define SET_SLAVES_3 6
-#define STATISTICS 7
-#define DELAY_QUERY 8
+#define SET_SLAVES_4 7
+#define SET_SLAVES_5 8
+#define SET_SLAVES_6 9
+#define SET_SLAVES_7 10
+#define STATISTICS 11
+#define DELAY_QUERY 12
 
-#define ANZAHL_HOSTS 4
+#define ANZAHL_HOSTS 8
 
 
 pthread_mutex_t global_lock;
@@ -34,16 +38,16 @@ int query_nr = 0;   // used to schedule queries in round robin manner
 size_t number_of_read_queries;
 size_t number_of_write_queries;
 int dispatcher_socket = 0;
-const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}};
+const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}, {"127.0.0.1", "5004"}, {"127.0.0.1", "5005"}, {"127.0.0.1", "5006"}, {"127.0.0.1", "5007"}};
 
 int slaves = 0;
 int openSockets[MAX_SOCKETS];
 int num_opensockets = 0;
 
-int current_master = 0; 
-int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3};
+int current_master = 0;
+int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3, 4, 5, 6, 7};
 // int active_hosts_num = ANZAHL_HOSTS;
-int active_hosts_num = 1;
+int active_hosts_num = 4;
 
 int failoverdone = 0;
 
@@ -205,6 +209,14 @@ int get_request(int sock, char *buf, int *offset, int *action, char **content, i
                     *action = SET_SLAVES_2;
                 else if (strcmp(recource, "/number_of_slaves_3") == 0)
                     *action = SET_SLAVES_3;
+                else if (strcmp(recource, "/number_of_slaves_4") == 0)
+                    *action = SET_SLAVES_4;
+                else if (strcmp(recource, "/number_of_slaves_5") == 0)
+                    *action = SET_SLAVES_5;
+                else if (strcmp(recource, "/number_of_slaves_6") == 0)
+                    *action = SET_SLAVES_6;
+                else if (strcmp(recource, "/number_of_slaves_7") == 0)
+                    *action = SET_SLAVES_7;
                 else if (strcmp(recource, "/statistics") == 0)
                     *action = STATISTICS;
                 else if (strcmp(recource, "/delay") == 0)
@@ -530,6 +542,26 @@ int handle_request(int sock, int action, char *content, int content_length, int 
     case SET_SLAVES_3:
         printf("SETSLAVES to 3\n");
         active_hosts_num = 4;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_4:
+        printf("SETSLAVES to 4\n");
+        active_hosts_num = 5;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_5:
+        printf("SETSLAVES to 5\n");
+        active_hosts_num = 6;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_6:
+        printf("SETSLAVES to 6\n");
+        active_hosts_num = 7;
+        send(sock, answer2, sizeof(answer2), 0);
+        break;
+    case SET_SLAVES_7:
+        printf("SETSLAVES to 7\n");
+        active_hosts_num = 8;
         send(sock, answer2, sizeof(answer2), 0);
         break;
     case STATISTICS:
