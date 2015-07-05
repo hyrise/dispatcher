@@ -1,14 +1,42 @@
+OBJS = dispatcher.o Host.o Parser.o HttpRequest.o HttpResponse.o SimpleRoundRobinDispatcher.o jsoncpp.o
+CXX = g++
+CXXFLAGS = -Wall -c -std=c++11
+LFLAGS = -Wall
+LDLIBS = -lpthread
+INCLUDEPATHS = ./jsoncpp
 
+all: CXXFLAGS += -O3
+all: dispatcher
 
-all: dispatcher.c
-	gcc dispatcher.c -O3 -g -DNDEBUG -o dispatcher -lpthread
+debug: CXXFLAGS += -DDEBUG -g -O0
+debug: dispatcher
 
-test: unit_tests
-	./unit_tests
+dispatcher : $(OBJS)
+	$(CXX) $(LFLAGS) -I $(INCLUDEPATHS) $(OBJS) -o dispatcher $(LDLIBS)
 
-unit_tests: unit_tests.cpp 
-	g++ -std=c++0x unit_tests.cpp gtest/main.cpp gtest/gtest-all.cpp gtest/MinimalistPrinter.cpp  -o unit_tests -lpthread
-debug: dispatcher.c
-	gcc dispatcher.c -O0 -g -o dispatcher -lpthread
+dispatcher.o : dispatcher.cpp Host.h HttpRequest.h jsoncpp/json.h AbstractDispatcher.h SimpleRoundRobinDispatcher.h
+	$(CXX) $(CXXFLAGS) dispatcher.cpp
 
-.PHONY: test
+Host.o : Host.h Host.cpp HttpRequest.h HttpResponse.h
+	$(CXX) $(CXXFLAGS) Host.cpp
+
+Parser.o : Parser.h Parser.cpp jsoncpp/json.h 
+	$(CXX) $(CXXFLAGS) Parser.cpp
+
+HttpRequest.o : HttpRequest.h HttpRequest.cpp 
+	$(CXX) $(CXXFLAGS) HttpRequest.cpp
+
+HttpResponse.o : HttpResponse.h HttpResponse.cpp 
+	$(CXX) $(CXXFLAGS) HttpResponse.cpp
+
+SimpleRoundRobinDispatcher.o : SimpleRoundRobinDispatcher.h SimpleRoundRobinDispatcher.cpp AbstractDispatcher.h Parser.h Host.h HttpRequest.h HttpResponse.h
+	$(CXX) $(CXXFLAGS) SimpleRoundRobinDispatcher.cpp
+
+jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
+	$(CXX) -c -std=c++11 -I $(INCLUDEPATHS) jsoncpp/jsoncpp.cpp
+
+clean:
+	\rm *.o *~ dispatcher
+
+#all: dispatcher.cpp
+#	g++ -std=c++11 -I ./jsoncpp dispatcher.cpp Host.cpp Parser.cpp HttpRequest.cpp SimpleRoundRobinDispatcher.cpp jsoncpp/jsoncpp.cpp -o dispatcher -lpthread

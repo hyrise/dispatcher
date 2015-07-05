@@ -1,0 +1,4 @@
+json := jsoncpp
+json.libname := json
+json.includes := jsoncpp
+$(eval $(call library,json))
