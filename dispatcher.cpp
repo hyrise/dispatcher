@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+//C++ libraries
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -33,49 +34,12 @@ using namespace std;
 AbstractDispatcher* dispatcher;
 
 int dispatcherSocket;
+std::vector<std::thread> threads;
 std::vector<Host> hosts;
 std::queue<int> requests;
 
 std::mutex request_mtx;
 std::condition_variable request_cv;
-
-int readSettings(char const* path) {
-    std::ifstream settingsFile (path);
-    if (!settingsFile.is_open()) {
-        std::cerr << "Error: Could not find settings file" << std::endl;        
-        return -1;
-    }
-    
-    Json::Reader r = Json::Reader();
-    Json::Value v;
-    if (!r.parse(settingsFile, v, false)) {
-        std::cerr << "Error: Could not parse settings file! No valid JSON" << std::endl;
-        return -1;
-    }
-
-    Json::Value jsonHosts = v.get("hosts", "");
-    if (jsonHosts == "" || jsonHosts.isArray() == false || jsonHosts.size() == 0) {
-        std::cerr << "Error: Settings file does not contain any host" << std::endl;
-        return -1;
-    }
-    
-    for (auto host: jsonHosts) {
-        std::string url = host.get("url", "").asString();
-        int port = host.get("port", "0").asInt();
-        if (url != "" and port != 0) {
-            std::cout << "Found host with address " << url << ":" << port << std::endl;
-            hosts.emplace_back(url, port);
-        }
-    }
-    //TODO: master node 0
-
-    if (hosts.size() == 0) {
-        std::cerr << "Error: Settings file does not contain any valid hosts" << std::endl;
-        return -1;
-    }
-
-    return 0;
-}
 
 int createDispatcherSocket (const char* port) {
     int n, errno;
@@ -145,6 +109,9 @@ int get_content_lenght(const char *buf, const int size) {
 }
 
 void poll_requests(int id) {
+#ifdef DEBUG
+    std::cout << "Thread " << id << " started" << std::endl;
+#endif
     while (1) {
         std::unique_lock<std::mutex> lck(request_mtx);
         while (requests.empty()) request_cv.wait(lck);
@@ -237,6 +204,50 @@ void poll_requests(int id) {
     }
 }
 
+int readSettings(char const* path) {
+    std::ifstream settingsFile (path);
+    if (!settingsFile.is_open()) {
+        std::cerr << "Error: Could not find settings file" << std::endl;        
+        return -1;
+    }
+    
+    Json::Reader r = Json::Reader();
+    Json::Value v;
+    if (!r.parse(settingsFile, v, false)) {
+        std::cerr << "Error: Could not parse settings file! No valid JSON" << std::endl;
+        return -1;
+    }
+
+    Json::Value jsonHosts = v.get("hosts", "");
+    if (jsonHosts == "" || jsonHosts.isArray() == false || jsonHosts.size() == 0) {
+        std::cerr << "Error: Settings file does not contain any host" << std::endl;
+        return -1;
+    }
+    
+    for (auto host: jsonHosts) {
+        std::string url = host.get("url", "").asString();
+        int port = host.get("port", "0").asInt();
+        if (url != "" and port != 0) {
+#ifdef DEBUG
+            std::cout << "Found host with address " << url << ":" << port << std::endl;
+#endif
+            hosts.emplace_back(url, port);
+        }
+    }
+
+    if (hosts.size() == 0) {
+        std::cerr << "Error: Settings file does not contain any valid hosts" << std::endl;
+        return -1;
+    }
+
+    int thread_count = v.get("threads", 7).asInt();
+    for (int i = 1; i <= thread_count; ++i) {
+        threads.emplace_back(poll_requests, i);
+    }
+
+    return 0;
+}
+
 int main(int argc, char const *argv[]) {
     if (argc != 3) {
         std::cout << "USAGE: ./a.out PORT HOSTS_SETTINGS" << std::endl;
@@ -249,15 +260,15 @@ int main(int argc, char const *argv[]) {
     if (createDispatcherSocket(argv[1]) == -1)
         return -1;
 
+#ifdef DEBUG
     std::cout << "Dispatcher listening on port " << argv[1] << "..." << std::endl;
+#endif
 
     dispatcher = new SimpleRoundRobinDispatcher(&hosts);
 
     socklen_t client_addrlen = sizeof(client_addrlen);
     struct sockaddr client_addr;
 
-    std::thread handle_requests_1 (poll_requests, 1);
-    std::thread handle_requests_2 (poll_requests, 2);
     int clientSocket;
 
     while(1) {
@@ -273,15 +284,17 @@ int main(int argc, char const *argv[]) {
         request_cv.notify_one();
 
         if (client_addr.sa_family == AF_INET){
-            struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;           
+            struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
+#ifdef DEBUG          
             std::cout << "client " << client_addr_ip4->sin_addr.s_addr << std::endl;
+#endif
+
         } else {
             /* not an IPv4 address */
         }
     }
 
-    handle_requests_1.join();
-    handle_requests_2.join();
+    for (auto& th : threads) th.join();
 
     close(dispatcherSocket);
     

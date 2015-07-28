@@ -11,7 +11,7 @@ void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
     Parser p = Parser();
     unsigned int host_id;
     Host* host;
-    int readQuery = p.modifyingQuery(request.getDecodedContent());
+    int readQuery = p.queryType(request.getDecodedContent());
     switch (readQuery) {
     case 0:
         host_id = m_readCount.fetch_add(1) % m_hosts->size();
@@ -21,11 +21,20 @@ void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
 		std::cout << "read on host " << host->getUrl() << ":" << host->getPort() << std::endl;
 #endif
         break;
-	case 1:
-        readQuery = false;
+    case 1:
+        host = &(m_hosts->at(0));
+        response = host->executeRequest(request);
 #ifdef DEBUG
 		std::cout << "write" << std::endl;
 #endif
+        break;
+    case 2:
+        for (Host host : *m_hosts) {
+            response = host.executeRequest(request);
+#ifdef DEBUG
+		std::cout << "load" << std::endl;
+#endif
+        }
         break;
     default:
         return;

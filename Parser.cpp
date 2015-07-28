@@ -6,7 +6,8 @@ Parser::Parser() {
 
 Parser::~Parser() {};
 
-int Parser::modifyingQuery (const std::string &document) {
+int Parser::queryType (const std::string &document) {
+    bool writeQuery = false;
     Json::Value root;
     Json::Value operators;
     Json::Value obj_value(Json::objectValue);
@@ -23,8 +24,11 @@ int Parser::modifyingQuery (const std::string &document) {
     operators = root.get("operators", obj_value);
 
     for (auto op: operators) {
-        if (op.get("type", "").asString() == "InsertScan") return 1;
+        if (op.get("type", "").asString() == "InsertScan") writeQuery = true;
+        if (op.get("type", "").asString() == "TableLoad") return 2;
     }
+
+    if (writeQuery) return 1;
 
     return 0;
 }

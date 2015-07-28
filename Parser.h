@@ -7,7 +7,7 @@ public:
     Parser();
     ~Parser();
 
-    int modifyingQuery(const std::string &document);
+    int queryType(const std::string &document);
 protected:
     Json::Reader m_reader;
 };
