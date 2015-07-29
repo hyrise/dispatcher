@@ -75,7 +75,7 @@ std::unique_ptr<HttpResponse> Host::executeRequest(HttpRequest& request) {
 Content-Length: %d\r\n\
 Connection: Keep-Alive\r\n\r\n\
 %s";
-
+    std::cout << request.getContent() << std::endl;
     char *buf;
     asprintf(&buf, http_post, "/query/", request.getContentLength(), request.getContent());
     send(sock, buf, strlen(buf), 0);
@@ -91,6 +91,7 @@ Connection: Keep-Alive\r\n\r\n\
     char *content;
 
     buf = new char[BUFFERSIZE];
+    memset( buf, 0, BUFFERSIZE );
 
     while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
 #ifdef DEBUG
@@ -122,6 +123,7 @@ Connection: Keep-Alive\r\n\r\n\
 	          std::cout << "Status: \n" << status << std::endl;
 #endif
                 close(sock);
+                    std::cerr << "Wrong Status" << std::endl;
 	            return NULL;
 	        }
         }
@@ -133,7 +135,7 @@ Connection: Keep-Alive\r\n\r\n\
             hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
-                std::cout << "not FOUND" << std::endl;
+                std::cerr << "not FOUND" << std::endl;
                 continue;
             }
             header_received = 1;
@@ -154,6 +156,7 @@ Connection: Keep-Alive\r\n\r\n\
 #endif
                 content = http_body_start;
                 response->setContent(content);
+                free(buf);
                 close(sock);
                 return response;
             }
@@ -162,6 +165,7 @@ Connection: Keep-Alive\r\n\r\n\
         std::cout << "Read...\n" << std::endl;
 #endif
     }
+    free(buf);
     close(sock);
     return NULL;
 }

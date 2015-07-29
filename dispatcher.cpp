@@ -121,7 +121,8 @@ void poll_requests(int id) {
 
         HttpRequest r = HttpRequest();
 
-        char buf[BUFFERSIZE];
+        char *buf = new char[BUFFERSIZE];
+        memset(buf, 0, BUFFERSIZE);
         int offset = 0;
         int recv_size = 0;
         int first_line_received = 0;
@@ -138,7 +139,6 @@ void poll_requests(int id) {
             std::cout << "received " << recv_size << " bytes" << std::endl;
             std::cout <<  buf << std::endl;
 #endif
-
             offset += recv_size;
 
             if (!first_line_received) {

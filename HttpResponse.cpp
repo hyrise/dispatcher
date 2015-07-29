@@ -1,7 +1,12 @@
 #include "HttpResponse.h"
+#include <cstring>
 
-HttpResponse::HttpResponse() {};
-HttpResponse::~HttpResponse() {};
+HttpResponse::HttpResponse() {
+    m_content = new char[65535];
+};
+HttpResponse::~HttpResponse() {
+    free(m_content);
+};
 
 void HttpResponse::setStatus(std::string status) {
     m_status = atoi(status.c_str());
@@ -28,7 +33,7 @@ int HttpResponse::getContentLength() {
 }
 
 void HttpResponse::setContent(char* content) {
-    m_content = content;
+    strncpy(m_content, content, m_contentLength);
 }
 
 char* HttpResponse::getContent() {

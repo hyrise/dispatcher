@@ -38,7 +38,7 @@ def loadSettings (path):
         print "No hosts specified"
         return
 
-    server = data["hyrise_executable"]
+    server = data["hyrise_default"]
     dispatcher_port = data["port"] if "port" in data else 8888
     node_id = 0
     try:
@@ -49,7 +49,7 @@ def loadSettings (path):
             node_id += 1
             time.sleep(1)
 
-        dispatcher = data["dispatcher_executable"]
+        dispatcher = data["dispatcher"]
         proc = subprocess.Popen([dispatcher, str(dispatcher_port), path], preexec_fn=os.setpgrp)
         processes.append(proc)
     except:

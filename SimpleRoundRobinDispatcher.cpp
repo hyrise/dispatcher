@@ -42,7 +42,11 @@ void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
     
     char *buf;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    asprintf(&buf, http_response, response->getContentLength(), response->getContent());
+    if (response) {
+    	asprintf(&buf, http_response, response->getContentLength(), response->getContent());
+    } else {
+	asprintf(&buf, http_response, 0, "");
+    }
     send(sock, buf, strlen(buf), 0);
     free(buf);
     close(sock);
