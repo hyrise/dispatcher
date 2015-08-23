@@ -75,9 +75,9 @@ std::unique_ptr<HttpResponse> Host::executeRequest(HttpRequest& request) {
 Content-Length: %d\r\n\
 Connection: Keep-Alive\r\n\r\n\
 %s";
-    std::cout << request.getContent() << std::endl;
+
     char *buf;
-    asprintf(&buf, http_post, "/query/", request.getContentLength(), request.getContent());
+    asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request.getContentLength(), request.getContent());
     send(sock, buf, strlen(buf), 0);
     free(buf);
 
