@@ -109,6 +109,7 @@ int get_content_lenght(const char *buf, const int size) {
 }
 
 void poll_requests(int id) {
+    Json::Reader m_reader = Json::Reader();
 #ifdef DEBUG
     std::cout << "Thread " << id << " started" << std::endl;
 #endif
@@ -153,7 +154,7 @@ void poll_requests(int id) {
                 int n;
                 if ((n = sscanf(buf, "%15s %31s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
                     r.setMethod(method);
-                    //r.setResource(resource);
+                    r.setResource(recource);
 #ifdef DEBUG
                     std::cout << "HTTP Request: Method " << method << " Recource: " << recource << std::endl;
 #endif
@@ -200,7 +201,24 @@ void poll_requests(int id) {
             }
 
         }
-        dispatcher->dispatch(r, sock);
+
+        if (r.getResource() == "/query/") {
+            if (r.hasDecodedContent("query")) {
+                std::unique_ptr<Json::Value> root (new Json::Value);
+                if (m_reader.parse(r.getDecodedContent("query"), (*root)) == false) {
+                    std::cerr << "Error parsing json:" << m_reader.getFormattedErrorMessages() << std::endl;
+                    close(sock);
+                    return;
+                }
+                dispatcher->dispatchQuery(r, sock, std::move(root));
+            } else {
+                dispatcher->dispatch(r, sock);
+            }
+        } else if (r.getResource() == "/procedure/") {
+            dispatcher->dispatchProcedure(r, sock);
+        } else {
+            dispatcher->dispatch(r, sock);
+        }
     }
 }
 
