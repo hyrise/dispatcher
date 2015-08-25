@@ -11,12 +11,14 @@ SimpleRoundRobinDispatcher::SimpleRoundRobinDispatcher(std::vector<Host>* hosts)
 SimpleRoundRobinDispatcher::~SimpleRoundRobinDispatcher() {};
 
 void SimpleRoundRobinDispatcher::execute() {
-    std::unique_lock<std::mutex> lck(m_queue_mtx);
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
     while (1) {
+        std::unique_lock<std::mutex> lck(m_queue_mtx);
+        //std::cout << "waiting" << std::endl;
         while (m_parsedRequests.empty()) m_queue_cv.wait(lck);
+        //std::cout << "notified" << std::endl;
         m_requestTuple_t request = m_parsedRequests.front();
         m_parsedRequests.pop();
         lck.unlock();
