@@ -44,7 +44,7 @@ def loadSettings (path):
     try:
         for host in hosts:
             print "Starting server: " + server, host["port"]
-            proc = subprocess.Popen([server, "--port="+str(host["port"]), "--corecount="+str(host["core_count"]), "--coreoffset="+str(host["core_offset"]), "--nodeId="+ str(node_id), "--dispatcherport="+str(dispatcher_port)], stdout=open('/dev/null', 'w'), stderr=open('logfile.log', 'a'), preexec_fn=os.setpgrp)
+            proc = subprocess.Popen([server, "--port="+str(host["port"]), "--corecount="+str(host["core_count"]), "--coreoffset="+str(host["core_offset"]), "--nodeId="+ str(node_id), "--dispatcherport="+str(dispatcher_port), "--nodes="+str(host["numa_nodes"]), "--memorynodes="+str(host["numa_nodes"])], stdout=open('/dev/null', 'w'), stderr=open('logfile.log', 'a'), preexec_fn=os.setpgrp)
             processes.append(proc)
             node_id += 1
             time.sleep(1)
@@ -58,7 +58,7 @@ def loadSettings (path):
         raise
 
 processes = []
-loadSettings('../settings.json')
+loadSettings('./settings.json')
 while True:
     cmd = raw_input(">>")
     if (cmd == "exit") or (cmd == "q"):
