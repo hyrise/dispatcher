@@ -5,6 +5,8 @@
 #include <map>
 #include <iostream>
 
+#include "dbg.h"
+
 class HttpRequest {
 public: 
     HttpRequest();

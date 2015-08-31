@@ -2,7 +2,7 @@
 
 StreamDispatcher::StreamDispatcher(std::vector<Host>* hosts): AbstractDispatcher(hosts) {
     int thread_count = 4;
-    for (int j = 0; j < hosts->size(); j++)
+    for (unsigned int j = 0; j < hosts->size(); j++)
         for (int i = 1; i <= thread_count; ++i) {
             if (j == 0 and i == 1)
                 m_threads.emplace_back(&StreamDispatcher::executeWrite, this);
@@ -28,18 +28,7 @@ void StreamDispatcher::executeRead(int host_id) {
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
-        char *buf;
-        char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\nExecutor: %d\r\n\r\n%s";
-        if (response) {
-        	asprintf(&buf, http_response, response->getContentLength(), request.host, response->getContent());
-        } else {
-	        asprintf(&buf, http_response, 0, "");
-        }
-        send(request.socket, buf, strlen(buf), 0);
-        free(buf);
-    
-        close(request.socket);
-        debug("Closed socket");
+        sendResponse(std::move(response), request.socket);
     }
 }
 
@@ -60,18 +49,7 @@ void StreamDispatcher::executeWrite() {
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
-        char *buf;
-        char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\nExecutor: %d\r\n\r\n%s";
-        if (response) {
-        	asprintf(&buf, http_response, response->getContentLength(), request.host, response->getContent());
-        } else {
-	        asprintf(&buf, http_response, 0, "");
-        }
-        send(request.socket, buf, strlen(buf), 0);
-        free(buf);
-
-        close(request.socket);
-        debug("Closed socket");
+        sendResponse(std::move(response), request.socket);
     }
 }
 
@@ -99,8 +77,6 @@ int StreamDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
 
 void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
-    unsigned int host_id, counter;
-    Host* host;
     std::unique_lock<std::mutex> lck;
 
     debug("dispatch query");
@@ -132,44 +108,35 @@ void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique
 }
 
 void StreamDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
-    std::unique_ptr<HttpResponse> response;
-    Host* host;
-
     debug("dispatch procedure");
 
-    host = &(m_hosts->at(0));
-    response = host->executeRequest(request);
-    
-    char *buf;
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-    	asprintf(&buf, http_response, response->getContentLength(), response->getContent());
-    } else {
-	    asprintf(&buf, http_response, 0, "");
-    }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-
-    debug("Closed socket");
+    std::unique_lock<std::mutex> lck(m_write_queue_mtx);
+    m_parsedWrites.emplace(request, 0, sock);
+    m_write_queue_cv.notify_one();
 }
 
 void StreamDispatcher::dispatch(HttpRequest& request, int sock) {
-    std::unique_ptr<HttpResponse> response;
-    unsigned int host_id;
-    Host* host;
-
     debug("dispatch");
 
-    host = &(m_hosts->at(0));
-    response = host->executeRequest(request);
-    
+    std::unique_lock<std::mutex> lck(m_write_queue_mtx);
+    m_parsedWrites.emplace(request, 0, sock);
+    m_write_queue_cv.notify_one();
+}
+
+void StreamDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;
+    int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
     if (response) {
-    	asprintf(&buf, http_response, response->getContentLength(), response->getContent());
+    	allocatedBytes = asprintf(&buf, http_response, response->getContentLength(), response->getContent());
     } else {
-	asprintf(&buf, http_response, 0, "");
+	    allocatedBytes = asprintf(&buf, http_response, 0, "");
+    }
+    if (allocatedBytes == -1) {
+        std::cerr << "An error occurred while creating response" << std::endl;
+        send(sock, error_response, strlen(error_response), 0);
+        close(sock);
+        return;
     }
     send(sock, buf, strlen(buf), 0);
     free(buf);

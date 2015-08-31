@@ -18,6 +18,7 @@
 
 #include "HttpRequest.h"
 #include "HttpResponse.h"
+#include "dbg.h"
 
 class Host {
 public:

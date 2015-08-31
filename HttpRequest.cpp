@@ -59,7 +59,7 @@ std::string& HttpRequest::getDecodedContent(std::string key) {
 }
 
 std::map<std::string, std::string> HttpRequest::parseContent(std::string content) {
-    int pLastKey, pValue, pNextKey;
+    unsigned int pLastKey, pValue, pNextKey;
     std::map<std::string, std::string> result;
 
     pLastKey = 0;
@@ -73,10 +73,8 @@ std::map<std::string, std::string> HttpRequest::parseContent(std::string content
         pLastKey = pNextKey + 1;
     }
 
-#ifdef DEBUG
     for (auto& x: result)
-        std::cout << x.first << ": " << x.second << std::endl;
-#endif
+        debug("%s: %s", x.first.c_str(), x.second.c_str());
 
     return result;
 }
@@ -84,7 +82,7 @@ std::map<std::string, std::string> HttpRequest::parseContent(std::string content
 std::string HttpRequest::urlDecode(std::string &SRC) {
     std::string ret;
     char ch;
-    int i, ii;
+    unsigned int i, ii;
     for (i=0; i<SRC.length(); i++) {
         if (int(SRC[i])==37) {
             sscanf(SRC.substr(i+1,2).c_str(), "%x", &ii);

@@ -34,6 +34,8 @@ private:
     std::condition_variable m_write_queue_cv;
     std::condition_variable m_read_queue_cv;
 
+    const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
+
     struct m_requestTuple_t {
         HttpRequest& request;
         int host;
@@ -46,6 +48,7 @@ private:
     std::queue<m_requestTuple_t> m_parsedWrites;
 
     int parseQuery(std::unique_ptr<Json::Value> query);
+    void sendResponse(std::unique_ptr<HttpResponse> response, int sock);
 };
 
 #endif

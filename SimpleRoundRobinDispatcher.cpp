@@ -27,18 +27,7 @@ void SimpleRoundRobinDispatcher::execute() {
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
-        char *buf;
-        char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\nExecutor: %d\r\n\r\n%s";
-        if (response) {
-        	asprintf(&buf, http_response, response->getContentLength(), request.host, response->getContent());
-        } else {
-	        asprintf(&buf, http_response, 0, "");
-        }
-        send(request.socket, buf, strlen(buf), 0);
-        free(buf);
-
-        close(request.socket);
-        debug("Closed socket");
+        sendResponse(std::move(response), request.socket);
     }
 }
 
@@ -67,7 +56,6 @@ int SimpleRoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
 void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
     unsigned int host_id, counter;
-    Host* host;
     std::unique_lock<std::mutex> lck(m_queue_mtx);
 
     debug("dispatch query");
@@ -103,44 +91,35 @@ void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, s
 }
 
 void SimpleRoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
-    std::unique_ptr<HttpResponse> response;
-    Host* host;
-
     debug("dispatch procedure");
 
-    host = &(m_hosts->at(0));
-    response = host->executeRequest(request);
-    
-    char *buf;
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-    	asprintf(&buf, http_response, response->getContentLength(), response->getContent());
-    } else {
-	    asprintf(&buf, http_response, 0, "");
-    }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-
-    debug("Closed socket");
+    std::unique_lock<std::mutex> lck(m_queue_mtx);
+    m_parsedRequests.emplace(request, 0, sock);
+    m_queue_cv.notify_one();
 }
 
 void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
-    std::unique_ptr<HttpResponse> response;
-    unsigned int host_id;
-    Host* host;
-
     debug("dispatch");
 
-    host = &(m_hosts->at(0));
-    response = host->executeRequest(request);
-    
+    std::unique_lock<std::mutex> lck(m_queue_mtx);
+    m_parsedRequests.emplace(request, 0, sock);
+    m_queue_cv.notify_one();
+}
+
+void SimpleRoundRobinDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;
+    int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
     if (response) {
-    	asprintf(&buf, http_response, response->getContentLength(), response->getContent());
+    	allocatedBytes = asprintf(&buf, http_response, response->getContentLength(), response->getContent());
     } else {
-	asprintf(&buf, http_response, 0, "");
+	    allocatedBytes = asprintf(&buf, http_response, 0, "");
+    }
+    if (allocatedBytes == -1) {
+        std::cerr << "An error occurred while creating response" << std::endl;
+        send(sock, error_response, strlen(error_response), 0);
+        close(sock);
+        return;
     }
     send(sock, buf, strlen(buf), 0);
     free(buf);

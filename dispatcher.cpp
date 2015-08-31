@@ -26,6 +26,7 @@
 #include "AbstractDispatcher.h"
 #include "SimpleRoundRobinDispatcher.h"
 #include "StreamDispatcher.h"
+#include "dbg.h"
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
@@ -109,11 +110,16 @@ int get_content_lenght(const char *buf, const int size) {
     return res;
 }
 
+void handle_server_failed() {
+    hosts.erase(hosts.begin());
+    dispatcher->notify("Host failed");
+}
+
 void poll_requests(int id) {
     Json::Reader m_reader = Json::Reader();
-#ifdef DEBUG
-    std::cout << "Thread " << id << " started" << std::endl;
-#endif
+
+    debug("Thread %i started", id);
+
     while (1) {
         std::unique_lock<std::mutex> lck(request_mtx);
         while (requests.empty()) request_cv.wait(lck);
@@ -133,14 +139,11 @@ void poll_requests(int id) {
         char method[16], recource[32];
         char *content = NULL;
         int length = 0;
-#ifdef DEBUG
-        std::cout << "new request handled by " << id << std::endl;
-#endif
+
+        debug("new request handled by %i", id);
+
         while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
-#ifdef DEBUG
-            std::cout << "received " << recv_size << " bytes" << std::endl;
-            std::cout <<  buf << std::endl;
-#endif
+            debug("received %i bytes", recv_size);
             offset += recv_size;
 
             if (!first_line_received) {
@@ -156,9 +159,7 @@ void poll_requests(int id) {
                 if ((n = sscanf(buf, "%15s %31s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
                     r.setMethod(method);
                     r.setResource(recource);
-#ifdef DEBUG
-                    std::cout << "HTTP Request: Method " << method << " Recource: " << recource << std::endl;
-#endif
+                    debug("HTTP Request: Method %s Recource: %s", method, recource);
                 } else {
                     std::cerr << "ERROR scanf " << n << std::endl;
                     break;
@@ -182,9 +183,7 @@ void poll_requests(int id) {
                     std::cerr << "ERROR: Could not read content length!" << std::endl;
                     break;
                 } else {
-#ifdef DEBUG
-                   std::cout << "Header Received #### Content-Length: " << length << std::endl;
-#endif
+                    debug("Header Received #### Content-Length: %i", length);
                 }
             }
 
@@ -192,9 +191,8 @@ void poll_requests(int id) {
             // check whether message is complete
             if (http_body_start != NULL) {
                 if (((http_body_start - buf) + length) == offset) {
-#ifdef DEBUG
-                    std::cout << "complete message received\n header: " << http_body_start-buf << std::endl;
-#endif
+                    debug("complete message received\n header:  %s", http_body_start-buf);
+
                     content = http_body_start;
                     r.setContent(content);
                     break;
@@ -249,9 +247,7 @@ int readSettings(char const* path) {
         std::string url = host.get("url", "").asString();
         int port = host.get("port", "0").asInt();
         if (url != "" and port != 0) {
-#ifdef DEBUG
-            std::cout << "Found host with address " << url << ":" << port << std::endl;
-#endif
+            debug("Found host with address %s:%i", url.c_str(), port);
             hosts.emplace_back(url, port);
         }
     }
@@ -264,6 +260,17 @@ int readSettings(char const* path) {
     int thread_count = v.get("threads", 7).asInt();
     for (int i = 1; i <= thread_count; ++i) {
         threads.emplace_back(poll_requests, i);
+    }
+
+    std::string dispatchAlgorithm = v.get("algorithm", "SimpleRoundRobin").asString();
+
+    if (dispatchAlgorithm == "Stream") {
+        dispatcher = new StreamDispatcher(&hosts);
+        debug("Used dispatching algorithm: Stream");
+    } else {
+        //SimpleRoundRobinDipatcher is the standard algorithm
+        dispatcher = new SimpleRoundRobinDispatcher(&hosts);
+        debug("Used dispatching algorithm: SimpleRoundRobin");
     }
 
     return 0;
@@ -281,12 +288,7 @@ int main(int argc, char const *argv[]) {
     if (createDispatcherSocket(argv[1]) == -1)
         return -1;
 
-#ifdef DEBUG
-    std::cout << "Dispatcher listening on port " << argv[1] << "..." << std::endl;
-#endif
-
-    dispatcher = new StreamDispatcher(&hosts);
-//new SimpleRoundRobinDispatcher(&hosts);
+    debug("Dispatcher listening on port %s ...", argv[1]);
 
     socklen_t client_addrlen = sizeof(client_addrlen);
     struct sockaddr client_addr;
@@ -307,10 +309,7 @@ int main(int argc, char const *argv[]) {
 
         if (client_addr.sa_family == AF_INET){
             struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
-#ifdef DEBUG          
-            std::cout << "client " << client_addr_ip4->sin_addr.s_addr << std::endl;
-#endif
-
+            debug("client %s", client_addr_ip4->sin_addr.s_addr);
         } else {
             /* not an IPv4 address */
         }

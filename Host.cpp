@@ -77,7 +77,11 @@ Connection: Keep-Alive\r\n\r\n\
 %s";
 
     char *buf;
-    asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request.getContentLength(), request.getContent());
+    int allocatedBytes = asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request.getContentLength(), request.getContent());
+    if (allocatedBytes == -1) {
+	std::cerr << "Error during creating request" << std::endl;
+        return NULL;
+    }
     send(sock, buf, strlen(buf), 0);
     free(buf);
 
@@ -94,9 +98,7 @@ Connection: Keep-Alive\r\n\r\n\
     memset( buf, 0, BUFFERSIZE );
 
     while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
-#ifdef DEBUG
-        std::cout << "received " << recv_size << " bytes\n" << buf << std::endl;
-#endif
+	debug("received %i bytes\ncontent: %s", recv_size, buf );
         offset += recv_size;
         if (!first_line_received) {
             char *hit_ptr;
@@ -110,20 +112,15 @@ Connection: Keep-Alive\r\n\r\n\
             int n;
             if ((n = sscanf(buf, "HTTP/1.1 %d", &status)) == 1) {
                 response->setStatus(status);
-#ifdef DEBUG
-                std::cout << "HTTP Response status: " << status << std::endl;
-#endif
+		        debug("HTTP Response status: %i", status);
             } else {
                 std::cerr << "ERROR----------------------- scanf " << n << std::endl;
                 close(sock);
                 return NULL;
             }
 	        if (status != 200) {
-#ifdef DEBUG
-	          std::cout << "Status: \n" << status << std::endl;
-#endif
                 close(sock);
-                    std::cerr << "Wrong Status" << std::endl;
+                std::cerr << "Wrong Status" << std::endl;
 	            return NULL;
 	        }
         }
@@ -142,18 +139,14 @@ Connection: Keep-Alive\r\n\r\n\
             // header delimiter reached
             content_length = get_content_lenght(buf, offset);
             response->setContentLength(content_length);
-#ifdef DEBUG
-            std::cout << "Content-Length: " << content_length << std::endl;
-#endif
+            debug("Content-Length: %i", content_length);
         }
 
         // complete header was received
         // check whether message is complete
         if (http_body_start != NULL) {
             if (((http_body_start - buf) + content_length) == offset) {
-#ifdef DEBUG
-                std::cout << "complete message received\n header: " << http_body_start-buf << std::endl;
-#endif
+                debug("complete message received\n header: %s", http_body_start-buf);
                 content = http_body_start;
                 response->setContent(content);
                 free(buf);
@@ -161,9 +154,7 @@ Connection: Keep-Alive\r\n\r\n\
                 return response;
             }
         }
-#ifdef DEBUG
-        std::cout << "Read...\n" << std::endl;
-#endif
+        debug("Read...");
     }
     free(buf);
     close(sock);
