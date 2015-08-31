@@ -25,6 +25,7 @@
 #include "HttpRequest.h"
 #include "AbstractDispatcher.h"
 #include "SimpleRoundRobinDispatcher.h"
+#include "StreamDispatcher.h"
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
@@ -207,6 +208,8 @@ void poll_requests(int id) {
                 std::unique_ptr<Json::Value> root (new Json::Value);
                 if (m_reader.parse(r.getDecodedContent("query"), (*root)) == false) {
                     std::cerr << "Error parsing json:" << m_reader.getFormattedErrorMessages() << std::endl;
+                    std::cout << r.getContent() << std::endl;
+                    std::cout << r.getDecodedContent("query") << std::endl;
                     close(sock);
                     return;
                 }
@@ -282,7 +285,8 @@ int main(int argc, char const *argv[]) {
     std::cout << "Dispatcher listening on port " << argv[1] << "..." << std::endl;
 #endif
 
-    dispatcher = new SimpleRoundRobinDispatcher(&hosts);
+    dispatcher = new StreamDispatcher(&hosts);
+//new SimpleRoundRobinDispatcher(&hosts);
 
     socklen_t client_addrlen = sizeof(client_addrlen);
     struct sockaddr client_addr;

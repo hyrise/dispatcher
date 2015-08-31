@@ -1,29 +1,62 @@
-#include "SimpleRoundRobinDispatcher.h"
+#include "StreamDispatcher.h"
 
-SimpleRoundRobinDispatcher::SimpleRoundRobinDispatcher(std::vector<Host>* hosts): AbstractDispatcher(hosts) {
-    m_readCount.store(0);
-    int thread_count = 10;
-    for (int i = 1; i <= thread_count; ++i) {
-        m_threads.emplace_back(&SimpleRoundRobinDispatcher::execute, this);
-    }
+StreamDispatcher::StreamDispatcher(std::vector<Host>* hosts): AbstractDispatcher(hosts) {
+    int thread_count = 4;
+    for (int j = 0; j < hosts->size(); j++)
+        for (int i = 1; i <= thread_count; ++i) {
+            if (j == 0 and i == 1)
+                m_threads.emplace_back(&StreamDispatcher::executeWrite, this);
+            else
+                m_threads.emplace_back(&StreamDispatcher::executeRead, this, j);
+        }
 };
 
-SimpleRoundRobinDispatcher::~SimpleRoundRobinDispatcher() {};
+StreamDispatcher::~StreamDispatcher() {};
 
-void SimpleRoundRobinDispatcher::execute() {
+void StreamDispatcher::executeRead(int host_id) {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
     while (1) {
-        std::unique_lock<std::mutex> lck(m_queue_mtx);
+        std::unique_lock<std::mutex> lck(m_read_queue_mtx);
+        while (m_parsedReads.empty()) m_read_queue_cv.wait(lck);
+        m_requestTuple_t request = m_parsedReads.front();
+        m_parsedReads.pop();
+        lck.unlock();
+
+        host = &(m_hosts->at(host_id));
+        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
+        response = host->executeRequest(request.request);
+
+        char *buf;
+        char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\nExecutor: %d\r\n\r\n%s";
+        if (response) {
+        	asprintf(&buf, http_response, response->getContentLength(), request.host, response->getContent());
+        } else {
+	        asprintf(&buf, http_response, 0, "");
+        }
+        send(request.socket, buf, strlen(buf), 0);
+        free(buf);
+    
+        close(request.socket);
+        debug("Closed socket");
+    }
+}
+
+void StreamDispatcher::executeWrite() {
+    std::unique_ptr<HttpResponse> response;
+    Host* host;
+
+    while (1) {
+        std::unique_lock<std::mutex> lck(m_write_queue_mtx);
         //std::cout << "waiting" << std::endl;
-        while (m_parsedRequests.empty()) m_queue_cv.wait(lck);
+        while (m_parsedWrites.empty()) m_write_queue_cv.wait(lck);
         //std::cout << "notified" << std::endl;
-        m_requestTuple_t request = m_parsedRequests.front();
-        m_parsedRequests.pop();
+        m_requestTuple_t request = m_parsedWrites.front();
+        m_parsedWrites.pop();
         lck.unlock();
         
-        host = &(m_hosts->at(request.host));
+        host = &(m_hosts->at(0));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
@@ -42,7 +75,7 @@ void SimpleRoundRobinDispatcher::execute() {
     }
 }
 
-int SimpleRoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
+int StreamDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     bool writeQuery = false;
     Json::Value operators;
     Json::Value obj_value(Json::objectValue);
@@ -64,11 +97,11 @@ int SimpleRoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     return 0;
 }
 
-void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
     unsigned int host_id, counter;
     Host* host;
-    std::unique_lock<std::mutex> lck(m_queue_mtx);
+    std::unique_lock<std::mutex> lck;
 
     debug("dispatch query");
     int readQuery = parseQuery(std::move(query));
@@ -76,19 +109,15 @@ void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, s
         readQuery = 1;
     switch (readQuery) {
     case 0:
-        counter = m_readCount.fetch_add(1);
-        //avoid numeric overflow, reset read count after half of unsigned int range queries
-        if (counter == m_boundary)
-            m_readCount.fetch_sub(m_boundary);
-        host_id = counter % m_hosts->size();
-
-        m_parsedRequests.emplace(request, host_id, sock);
-        m_queue_cv.notify_one();
+        lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
+        m_parsedReads.emplace(request, 0, sock);
+        m_read_queue_cv.notify_one();
         
         break;
     case 1:
-        m_parsedRequests.emplace(request, 0, sock);
-        m_queue_cv.notify_one();
+        lck = std::unique_lock<std::mutex>(m_write_queue_mtx);
+        m_parsedWrites.emplace(request, 0, sock);
+        m_write_queue_cv.notify_one();
         break;
     case 2:
         for (Host host : *m_hosts) {
@@ -102,7 +131,7 @@ void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, s
     }
 }
 
-void SimpleRoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
+void StreamDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
@@ -125,7 +154,7 @@ void SimpleRoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int soc
     debug("Closed socket");
 }
 
-void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
+void StreamDispatcher::dispatch(HttpRequest& request, int sock) {
     std::unique_ptr<HttpResponse> response;
     unsigned int host_id;
     Host* host;

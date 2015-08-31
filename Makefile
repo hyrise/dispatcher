@@ -1,4 +1,4 @@
-OBJS = dispatcher.o Host.o HttpRequest.o HttpResponse.o SimpleRoundRobinDispatcher.o jsoncpp.o
+OBJS = dispatcher.o Host.o HttpRequest.o HttpResponse.o StreamDispatcher.o SimpleRoundRobinDispatcher.o jsoncpp.o
 CXX = g++
 CXXFLAGS = -Wall -c -std=c++11
 LFLAGS = -Wall
@@ -28,6 +28,9 @@ HttpResponse.o : HttpResponse.h HttpResponse.cpp
 
 SimpleRoundRobinDispatcher.o : SimpleRoundRobinDispatcher.h SimpleRoundRobinDispatcher.cpp AbstractDispatcher.h Host.h HttpRequest.h HttpResponse.h
 	$(CXX) $(CXXFLAGS) SimpleRoundRobinDispatcher.cpp
+
+StreamDispatcher.o : StreamDispatcher.h StreamDispatcher.cpp AbstractDispatcher.h Host.h HttpRequest.h HttpResponse.h
+	$(CXX) $(CXXFLAGS) StreamDispatcher.cpp
 
 jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c -std=c++11 -I $(INCLUDEPATHS) jsoncpp/jsoncpp.cpp
