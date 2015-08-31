@@ -146,7 +146,7 @@ Connection: Keep-Alive\r\n\r\n\
         // check whether message is complete
         if (http_body_start != NULL) {
             if (((http_body_start - buf) + content_length) == offset) {
-                debug("complete message received\n header: %s", http_body_start-buf);
+                //debug("complete message received\n header: %s", http_body_start-buf);
                 content = http_body_start;
                 response->setContent(content);
                 free(buf);

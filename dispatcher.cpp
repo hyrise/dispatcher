@@ -191,7 +191,7 @@ void poll_requests(int id) {
             // check whether message is complete
             if (http_body_start != NULL) {
                 if (((http_body_start - buf) + length) == offset) {
-                    debug("complete message received\n header:  %s", http_body_start-buf);
+                    //debug("complete message received\n header:  %s", http_body_start-buf);
 
                     content = http_body_start;
                     r.setContent(content);
@@ -309,7 +309,7 @@ int main(int argc, char const *argv[]) {
 
         if (client_addr.sa_family == AF_INET){
             struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
-            debug("client %s", client_addr_ip4->sin_addr.s_addr);
+            //debug("client %s", client_addr_ip4->sin_addr.s_addr);
         } else {
             /* not an IPv4 address */
         }

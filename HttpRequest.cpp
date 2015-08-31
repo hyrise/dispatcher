@@ -59,7 +59,7 @@ std::string& HttpRequest::getDecodedContent(std::string key) {
 }
 
 std::map<std::string, std::string> HttpRequest::parseContent(std::string content) {
-    unsigned int pLastKey, pValue, pNextKey;
+    size_t pLastKey, pValue, pNextKey;
     std::map<std::string, std::string> result;
 
     pLastKey = 0;
