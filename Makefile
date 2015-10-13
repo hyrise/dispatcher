@@ -36,7 +36,7 @@ jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c -std=c++11 -I $(INCLUDEPATHS) jsoncpp/jsoncpp.cpp
 
 clean:
-	\rm *.o *~ dispatcher
+	rm *.o dispatcher
 
 #all: dispatcher.cpp
 #	g++ -std=c++11 -I ./jsoncpp dispatcher.cpp Host.cpp HttpRequest.cpp SimpleRoundRobinDispatcher.cpp jsoncpp/jsoncpp.cpp -o dispatcher -lpthread

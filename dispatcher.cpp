@@ -27,7 +27,6 @@
 #include "SimpleRoundRobinDispatcher.h"
 #include "StreamDispatcher.h"
 #include "dbg.h"
-
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
 
@@ -35,7 +34,6 @@ using namespace std;
 
 AbstractDispatcher* dispatcher;
 
-int dispatcherSocket;
 std::vector<std::thread> threads;
 std::vector<Host> hosts;
 std::queue<int> requests;
@@ -43,8 +41,9 @@ std::queue<int> requests;
 std::mutex request_mtx;
 std::condition_variable request_cv;
 
-int createDispatcherSocket (const char* port) {
+int create_dispatcher_socket (const char* port) {
     int n, errno;
+    int sock_fd;
 
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
@@ -56,23 +55,23 @@ int createDispatcherSocket (const char* port) {
         return -1;
     }
 
-    if ((dispatcherSocket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
+    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         std::cerr << "Error: Can't create socket: " << strerror(errno) << std::endl;
         return -1;
     }
 
-    if (bind(dispatcherSocket, res->ai_addr, res->ai_addrlen) < 0) {
-        close(dispatcherSocket);
+    if (bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+        close(sock_fd);
         std::cerr << "Error: can't bind to socket: " << strerror(errno) << std::endl;
         return -1;
     }
 
-    if (listen(dispatcherSocket, MAXPENDING) < 0) {
+    if (listen(sock_fd, MAXPENDING) < 0) {
         std::cerr << "Error: can't listen to socket: " << strerror(errno) << std::endl;
         return -1;
     }
 
-    return 0;
+    return sock_fd;
 }
 
 char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
@@ -223,7 +222,7 @@ void poll_requests(int id) {
     }
 }
 
-int readSettings(char const* path) {
+int read_settings(char const* path) {
     std::ifstream settingsFile (path);
     if (!settingsFile.is_open()) {
         std::cerr << "Error: Could not find settings file" << std::endl;        
@@ -282,42 +281,35 @@ int main(int argc, char const *argv[]) {
         return 1;
     }
 
-    if (readSettings(argv[2]) == -1)
+    if (read_settings(argv[2]) == -1)
         return -1;
 
-    if (createDispatcherSocket(argv[1]) == -1)
+    int sock_fd;
+    if ((sock_fd = create_dispatcher_socket(argv[1])) == -1)
         return -1;
 
     debug("Dispatcher listening on port %s ...", argv[1]);
 
-    socklen_t client_addrlen = sizeof(client_addrlen);
+    socklen_t client_addrlen = sizeof(socklen_t);
     struct sockaddr client_addr;
-
-    int clientSocket;
+    int client_socket;
 
     while(1) {
-        clientSocket = accept(dispatcherSocket, &client_addr, &client_addrlen);
+        client_socket = accept(sock_fd, &client_addr, &client_addrlen);
         
-        if (clientSocket < 0) {
+        if (client_socket < 0) {
             std::cerr << "Error: on accept" << std::endl;
             return -1;
         }
         
         std::unique_lock<std::mutex> lck(request_mtx);
-        requests.push(clientSocket);
+        requests.push(client_socket);
         request_cv.notify_one();
-
-        if (client_addr.sa_family == AF_INET){
-            struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
-            //debug("client %s", client_addr_ip4->sin_addr.s_addr);
-        } else {
-            /* not an IPv4 address */
-        }
     }
 
     for (auto& th : threads) th.join();
 
-    close(dispatcherSocket);
+    close(sock_fd);
     
     return 0;
 }
