@@ -1,3 +1,7 @@
+
+#ifndef DISPATCHER_H_
+#define DISPATCHER_H_
+
 #include "AbstractDistributor.h"
 
 #include <mutex>
@@ -5,8 +9,8 @@
 #include <thread>
 #include <vector>
 
-class Dispatcher
-{
+
+class Dispatcher {
 private:
     std::queue<int> request_queue;
     std::mutex request_queue_mutex;
@@ -28,3 +32,5 @@ public:
     void start();
     void shut_down();
 };
+
+#endif  // DISPATCHER_H_

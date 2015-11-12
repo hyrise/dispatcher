@@ -11,6 +11,7 @@
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
 
+
 char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
     if (len_haystack == 0) return (char *)haystack; /* degenerate edge case */
     if (len_needle == 0) return (char *)haystack; /* degenerate edge case */
@@ -38,6 +39,7 @@ int get_content_lenght1(const char *buf, const int size, const char *lengthname)
     return content_length;
 }
 
+
 int get_content_lenght(const char *buf, const int size) {
     // TODO refactor
     int res = get_content_lenght1(buf, size, "Content-Length:");
@@ -47,6 +49,7 @@ int get_content_lenght(const char *buf, const int size) {
             res = get_content_lenght1(buf, size, "content-length:");
     return res;
 }
+
 
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
     dispatcher->dispatch_requests(id);
@@ -142,7 +145,6 @@ void Dispatcher::dispatch_requests(int id) {
                     break;
                 }
             }
-
         }
 
         if (r.getResource() == "/query/") {
@@ -171,10 +173,6 @@ void Dispatcher::dispatch_requests(int id) {
 Dispatcher::Dispatcher(char *port, char *settings_file) {
     this->port = port;
 
-    std::vector<Host> *hosts = new std::vector<Host>;
-
-    debug("Parse settings");
-
     std::ifstream settingsFile(settings_file);
     if (!settingsFile.is_open()) {        
         throw "Could not find settings file.";
@@ -192,6 +190,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         throw "Settings file does not contain any host.";
     }
     
+    std::vector<Host> *hosts = new std::vector<Host>;
     for (auto host: jsonHosts) {
         std::string url = host.get("url", "").asString();
         int port = host.get("port", "0").asInt();
@@ -207,7 +206,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 
     thread_pool_size = v.get("threads", 7).asInt();
 
-    std::string dispatchAlgorithm = v.get("algorithm", "SimpleRoundRobin").asString();
+    std::string dispatchAlgorithm = v.get("algorithm", "RoundRobin").asString();
 
     if (dispatchAlgorithm == "Stream") {
         distributor = new StreamDistributor(hosts);
@@ -215,7 +214,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     } else {
         //SimpleRoundRobinDipatcher is the standard algorithm
         distributor = new RoundRobinDistributor(hosts);
-        debug("Used dispatching algorithm: SimpleRoundRobin");
+        debug("Used dispatching algorithm: RoundRobin");
     }
 }
 
@@ -257,10 +256,12 @@ int Dispatcher::create_socket() {
 void Dispatcher::start() {
     debug("Start dispatcher");
 
-    for (int i = 1; i <= thread_pool_size; ++i) {
+    // Start parser threads
+    for (int i = 0; i < thread_pool_size; ++i) {
         parser_thread_pool.emplace_back(dispatch_requests_wrapper, this, i);
     }
 
+    // create dispatcher socket
     int socket = create_socket();
     debug("Dispatcher: Listening on port %s", port);
 
@@ -268,9 +269,9 @@ void Dispatcher::start() {
     struct sockaddr client_addr;
     int client_socket;
 
+    // Disptach requests
     while(1) {
         client_socket = accept(socket, &client_addr, &client_addrlen);
-        
         if (client_socket < 0) {
             throw "Error: on accept";
         }
@@ -281,11 +282,10 @@ void Dispatcher::start() {
     }
 }
 
+
 void Dispatcher::shut_down() {
     debug("Shut down dispatcher");
     for (auto& th : parser_thread_pool) {
         th.join();
     }
 }
-
-
