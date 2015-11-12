@@ -1,5 +1,5 @@
-#ifndef STREAM_DISPATCHER_H_
-#define STREAM_DISPATCHER_H_
+#ifndef ROUND_ROBIN_DISTRIBUTOR_H_
+#define ROUND_ROBIN_DISTRIBUTOR_H_
 
 #include <iostream>
 #include <atomic>
@@ -11,28 +11,26 @@
 #include <condition_variable>
 #include <queue>
 
-#include "AbstractDispatcher.h"
+#include "AbstractDistributor.h"
 #include "HttpResponse.h"
 #include "dbg.h"
 
-class StreamDispatcher : public AbstractDispatcher {
+class RoundRobinDistributor : public AbstractDistributor {
 public:
-    StreamDispatcher(std::vector<Host> *hosts);
-    ~StreamDispatcher();
+    RoundRobinDistributor(std::vector<Host> *hosts);
+    ~RoundRobinDistributor();
 
     virtual void dispatch(HttpRequest& request, int sock);
     virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query);
     virtual void dispatchProcedure(HttpRequest& request, int sock);
 
-    void executeRead(int host_id);
-    void executeWrite();
+    void execute();
 private:
-    std::vector<unsigned int> m_queryCount;
+    std::atomic<unsigned int> m_readCount;
+    const unsigned int m_boundary = std::numeric_limits<unsigned int>::max() / 2;
     std::vector<std::thread> m_threads;
-    std::mutex m_read_queue_mtx;
-    std::mutex m_write_queue_mtx;
-    std::condition_variable m_write_queue_cv;
-    std::condition_variable m_read_queue_cv;
+    std::mutex m_queue_mtx;
+    std::condition_variable m_queue_cv;
 
     const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
 
@@ -44,8 +42,7 @@ private:
         {
         }
     };
-    std::queue<m_requestTuple_t> m_parsedReads;
-    std::queue<m_requestTuple_t> m_parsedWrites;
+    std::queue<m_requestTuple_t> m_parsedRequests;
 
     int parseQuery(std::unique_ptr<Json::Value> query);
     void sendResponse(std::unique_ptr<HttpResponse> response, int sock);

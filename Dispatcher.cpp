@@ -1,8 +1,8 @@
 #include "Dispatcher.h"
 #include "dbg.h"
 #include "jsoncpp/json.h"
-#include "RoundRobinDispatcher.h"
-#include "StreamDispatcher.h"
+#include "RoundRobinDistributor.h"
+#include "StreamDistributor.h"
 
 #include <iostream>
 #include <fstream>
@@ -210,11 +210,11 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     std::string dispatchAlgorithm = v.get("algorithm", "SimpleRoundRobin").asString();
 
     if (dispatchAlgorithm == "Stream") {
-        distributor = new StreamDispatcher(hosts);
+        distributor = new StreamDistributor(hosts);
         debug("Used dispatching algorithm: Stream");
     } else {
         //SimpleRoundRobinDipatcher is the standard algorithm
-        distributor = new RoundRobinDispatcher(hosts);
+        distributor = new RoundRobinDistributor(hosts);
         debug("Used dispatching algorithm: SimpleRoundRobin");
     }
 }

@@ -1,4 +1,4 @@
-OBJS = Dispatcher.o jsoncpp.o RoundRobinDispatcher.o StreamDispatcher.o Host.o HttpRequest.o HttpResponse.o
+OBJS = Dispatcher.o jsoncpp.o RoundRobinDistributor.o StreamDistributor.o Host.o HttpRequest.o HttpResponse.o
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -O3
 INCLUDEPATHS = ./jsoncpp
@@ -12,11 +12,11 @@ Dispatcher.o : Dispatcher.cpp
 	$(CXX) $(CXXFLAGS) -c Dispatcher.cpp
 
 
-RoundRobinDispatcher.o : RoundRobinDispatcher.cpp
-	$(CXX) $(CXXFLAGS) -c RoundRobinDispatcher.cpp
+RoundRobinDistributor.o : RoundRobinDistributor.cpp
+	$(CXX) $(CXXFLAGS) -c RoundRobinDistributor.cpp
 
-StreamDispatcher.o : StreamDispatcher.cpp
-	$(CXX) $(CXXFLAGS) -c StreamDispatcher.cpp
+StreamDistributor.o : StreamDistributor.cpp
+	$(CXX) $(CXXFLAGS) -c StreamDistributor.cpp
 
 Host.o : Host.h Host.cpp HttpRequest.h HttpResponse.h
 	$(CXX) $(CXXFLAGS) -c Host.cpp

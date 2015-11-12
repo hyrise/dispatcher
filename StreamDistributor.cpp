@@ -1,19 +1,19 @@
-#include "StreamDispatcher.h"
+#include "StreamDistributor.h"
 
-StreamDispatcher::StreamDispatcher(std::vector<Host> *hosts): AbstractDispatcher(hosts) {
+StreamDistributor::StreamDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
     int thread_count = 4;
     for (unsigned int j = 0; j < hosts->size(); j++)
         for (int i = 1; i <= thread_count; ++i) {
             if (j == 0 and i == 1)
-                m_threads.emplace_back(&StreamDispatcher::executeWrite, this);
+                m_threads.emplace_back(&StreamDistributor::executeWrite, this);
             else
-                m_threads.emplace_back(&StreamDispatcher::executeRead, this, j);
+                m_threads.emplace_back(&StreamDistributor::executeRead, this, j);
         }
 };
 
-StreamDispatcher::~StreamDispatcher() {};
+StreamDistributor::~StreamDistributor() {};
 
-void StreamDispatcher::executeRead(int host_id) {
+void StreamDistributor::executeRead(int host_id) {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
@@ -24,7 +24,7 @@ void StreamDispatcher::executeRead(int host_id) {
         m_parsedReads.pop();
         lck.unlock();
 
-        host = &(m_hosts->at(host_id));
+        host = &(cluster_nodes->at(host_id));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
@@ -32,7 +32,7 @@ void StreamDispatcher::executeRead(int host_id) {
     }
 }
 
-void StreamDispatcher::executeWrite() {
+void StreamDistributor::executeWrite() {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
@@ -45,7 +45,7 @@ void StreamDispatcher::executeWrite() {
         m_parsedWrites.pop();
         lck.unlock();
         
-        host = &(m_hosts->at(0));
+        host = &(cluster_nodes->at(0));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
@@ -53,7 +53,7 @@ void StreamDispatcher::executeWrite() {
     }
 }
 
-int StreamDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
+int StreamDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
     bool writeQuery = false;
     Json::Value operators;
     Json::Value obj_value(Json::objectValue);
@@ -75,7 +75,7 @@ int StreamDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     return 0;
 }
 
-void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void StreamDistributor::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
     std::unique_lock<std::mutex> lck;
 
@@ -96,7 +96,7 @@ void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique
         m_write_queue_cv.notify_one();
         break;
     case 2:
-        for (Host host : *m_hosts) {
+        for (Host host : *cluster_nodes) {
             response = host.executeRequest(request);
         }
         close(sock);
@@ -107,7 +107,7 @@ void StreamDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique
     }
 }
 
-void StreamDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
+void StreamDistributor::dispatchProcedure(HttpRequest& request, int sock) {
     debug("dispatch procedure");
 
     std::unique_lock<std::mutex> lck(m_write_queue_mtx);
@@ -115,7 +115,7 @@ void StreamDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
     m_write_queue_cv.notify_one();
 }
 
-void StreamDispatcher::dispatch(HttpRequest& request, int sock) {
+void StreamDistributor::dispatch(HttpRequest& request, int sock) {
     debug("dispatch");
 
     std::unique_lock<std::mutex> lck(m_write_queue_mtx);
@@ -123,7 +123,7 @@ void StreamDispatcher::dispatch(HttpRequest& request, int sock) {
     m_write_queue_cv.notify_one();
 }
 
-void StreamDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
+void StreamDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;
     int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";

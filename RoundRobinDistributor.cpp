@@ -1,16 +1,16 @@
-#include "RoundRobinDispatcher.h"
+#include "RoundRobinDistributor.h"
 
-RoundRobinDispatcher::RoundRobinDispatcher(std::vector<Host> *hosts): AbstractDispatcher(hosts) {
+RoundRobinDistributor::RoundRobinDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
     m_readCount.store(0);
     int thread_count = 10;
     for (int i = 1; i <= thread_count; ++i) {
-        m_threads.emplace_back(&RoundRobinDispatcher::execute, this);
+        m_threads.emplace_back(&RoundRobinDistributor::execute, this);
     }
 };
 
-RoundRobinDispatcher::~RoundRobinDispatcher() {};
+RoundRobinDistributor::~RoundRobinDistributor() {};
 
-void RoundRobinDispatcher::execute() {
+void RoundRobinDistributor::execute() {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
@@ -23,7 +23,7 @@ void RoundRobinDispatcher::execute() {
         m_parsedRequests.pop();
         lck.unlock();
         
-        host = &(m_hosts->at(request.host));
+        host = &(cluster_nodes->at(request.host));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request.request);
 
@@ -31,7 +31,7 @@ void RoundRobinDispatcher::execute() {
     }
 }
 
-int RoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
+int RoundRobinDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
     bool writeQuery = false;
     Json::Value operators;
     Json::Value obj_value(Json::objectValue);
@@ -53,7 +53,7 @@ int RoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     return 0;
 }
 
-void RoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void RoundRobinDistributor::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
     unsigned int host_id, counter;
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -68,7 +68,7 @@ void RoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::un
         //avoid numeric overflow, reset read count after half of unsigned int range queries
         if (counter == m_boundary)
             m_readCount.fetch_sub(m_boundary);
-        host_id = counter % m_hosts->size();
+        host_id = counter % cluster_nodes->size();
 
         m_parsedRequests.emplace(request, host_id, sock);
         m_queue_cv.notify_one();
@@ -79,7 +79,7 @@ void RoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::un
         m_queue_cv.notify_one();
         break;
     case 2:
-        for (Host host : *m_hosts) {
+        for (Host host : *cluster_nodes) {
             response = host.executeRequest(request);
         }
         close(sock);
@@ -90,7 +90,7 @@ void RoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::un
     }
 }
 
-void RoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
+void RoundRobinDistributor::dispatchProcedure(HttpRequest& request, int sock) {
     debug("dispatch procedure");
 
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -98,7 +98,7 @@ void RoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
     m_queue_cv.notify_one();
 }
 
-void RoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
+void RoundRobinDistributor::dispatch(HttpRequest& request, int sock) {
     debug("dispatch");
 
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -106,7 +106,7 @@ void RoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
     m_queue_cv.notify_one();
 }
 
-void RoundRobinDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
+void RoundRobinDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;
     int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";

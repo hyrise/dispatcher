@@ -1,5 +1,5 @@
-#ifndef ABSTRACT_DISPATCHER_H_
-#define ABSTRACT_DISPATCHER_H_
+#ifndef ABSTRACT_DISTRIBUTOR_H_
+#define ABSTRACT_DISTRIBUTOR_H_
 
 #include <vector>
 #include <memory>
@@ -8,18 +8,18 @@
 #include "Host.h"
 #include "jsoncpp/json.h"
 
-class AbstractDispatcher {
+class AbstractDistributor {
 public:
-    AbstractDispatcher(std::vector<Host> *hosts)
+    AbstractDistributor(std::vector<Host> *hosts)
     {
-        m_hosts = hosts;
+        cluster_nodes = hosts;
     };
     virtual void dispatch(HttpRequest& request, int sock) = 0;
     virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) = 0;
     virtual void dispatchProcedure(HttpRequest& request, int sock) = 0;
     virtual void notify(std::string message) {}
 protected:
-    std::vector<Host> *m_hosts;
+    std::vector<Host> *cluster_nodes;
 };
 
 #endif
