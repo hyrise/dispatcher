@@ -1,6 +1,6 @@
 #include "StreamDispatcher.h"
 
-StreamDispatcher::StreamDispatcher(std::vector<Host>* hosts): AbstractDispatcher(hosts) {
+StreamDispatcher::StreamDispatcher(std::vector<Host> *hosts): AbstractDispatcher(hosts) {
     int thread_count = 4;
     for (unsigned int j = 0; j < hosts->size(); j++)
         for (int i = 1; i <= thread_count; ++i) {

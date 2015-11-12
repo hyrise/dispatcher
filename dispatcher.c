@@ -1,131 +1,69 @@
+//C libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <time.h>
+
+#include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/time.h>
-#include <arpa/inet.h>
 #include <netdb.h>
+
+#include <jansson.h>
 #include <pthread.h>
-#include <signal.h>
 
+#include "datastructures/linked_list.h"
 
+#include "dbg.h"
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
 
-#define MAX_THREADS 20000
-#define MAX_SOCKETS 20000
-
-#define READ_QUERY 1
-#define WRITE_QUERY 2
-#define NEW_MASTER 3
-#define SET_SLAVES_1 4
-#define SET_SLAVES_2 5
-#define SET_SLAVES_3 6
-#define SET_SLAVES_4 7
-#define SET_SLAVES_5 8
-#define SET_SLAVES_6 9
-#define SET_SLAVES_7 10
-#define STATISTICS 11
-#define DELAY_QUERY 12
-
-#define ANZAHL_HOSTS 8
 
 
-pthread_mutex_t global_lock;
-int query_nr = 0;   // used to schedule queries in round robin manner
-size_t number_of_read_queries;
-size_t number_of_write_queries;
-int dispatcher_socket = 0;
-const char HOSTS[ANZAHL_HOSTS][2][16] = {{"127.0.0.1", "5000"}, {"127.0.0.1", "5001"}, {"127.0.0.1", "5002"}, {"127.0.0.1", "5003"}, {"127.0.0.1", "5004"}, {"127.0.0.1", "5005"}, {"127.0.0.1", "5006"}, {"127.0.0.1", "5007"}};
+typedef struct host_s{
+    char *ip;
+    int port;
+} host_s;
 
-int slaves = 0;
-int openSockets[MAX_SOCKETS];
-int num_opensockets = 0;
+typedef host_s *host;
 
-int current_master = 0;
-int active_hosts[ANZAHL_HOSTS] = {0, 1, 2, 3, 4, 5, 6, 7};
-// int active_hosts_num = ANZAHL_HOSTS;
-int active_hosts_num = 4;
-
-int failoverdone = 0;
-
-char NotImpl[] = "HTTP/1.1 501 Not Implemented\n";
-
-char answer[] = "HTTP/1.0 200 OK\n\
-Content-Type: text/html\n\
-Content-Length: 155\r\n\r\n\
-Supported Operations:\n\
-POST /procedureRevenueSelect/ JSON_QUERY\n\
-POST /delay DELAY_QUERY\n\
-POST /procedureRevenueInsert/ JSON_WRITE\n\
-POST /new_master MASTER_IP MASTER_PORT\n\
-POST /number_of_slaves NUMBER_OF_SLAVES\n";
-
-char http_post[] = "POST %s HTTP/1.1\r\n\
-Content-Length: %d\r\n\
-Connection: Keep-Alive\r\n\r\n\
-%s";
-
-char http_response[] = "HTTP/1.1 200 OK\r\n\
-Content-Length: %d\r\n\
-Connection: Keep-Alive\r\n\r\n\
-%s";
-
-char answer2[] = "HTTP/1.1 204 No Content\r\n\r\n";
-char answer3[] = "HTTP/1.1 500 ERROR\r\n\r\n";
-
-
-void add_opensocket(int socket) {
-    openSockets[num_opensockets] = socket;
-    ++num_opensockets;
-}
-
-void term(int signum)
-{
-    printf("Exiting...\n");
-
-    int i = 0;
-    while (i < num_opensockets) {
-        close(openSockets[i]);
-        ++i;
+void host_free(host host) {
+    if (host != NULL) {
+        free(host->ip);
+        free(host);
     }
-    printf("Closed %d sockets.\n", i);
-    fflush(stdout);
-}
+};
 
-int get_socket(int host_nr) {
-
-#ifndef NDEBUG
-    printf("get socket for host %d\n", host_nr);
-#endif  
-
-    int port = atoi(HOSTS[host_nr][1]);
-
-    int sockfd;
-    struct sockaddr_in dest;
-
-    if ( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
-        printf("ERROR: could not create a socket\n");
+void socket_free(int *socket_fd_r) {
+    if (socket_fd_r != NULL) {
+        free(socket_fd_r);
     }
-    add_opensocket(sockfd);
+};
 
-    /*---Initialize server address/port struct---*/
-    bzero(&dest, sizeof(dest));
-    dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr(HOSTS[host_nr][0]);
-    dest.sin_port = htons(port);
+pthread_mutex_t request_queue_lock;
 
-    /*---Connect to server---*/
-    if ( connect(sockfd, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
-        printf("ERROR: could not connect to host\n");
-    }
-    fflush(stdout);
-    return sockfd;
 
+int create_dispatcher_socket (const char* port) {
+    int sock_fd;
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    check(getaddrinfo(NULL, port, &hints, &res) == 0, "Error getaddrinfo.");
+
+    sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    check(sock_fd >= 0, "Error: Can't create socket.");
+
+    check(bind(sock_fd, res->ai_addr, res->ai_addrlen) == 0, "Error: can't bind to socket");
+
+    check(listen(sock_fd, MAXPENDING) == 0, "Error: can't listen to socket");
+
+    return sock_fd;
+error:
+    //TODO clean up
+    return -1;
 }
-
 
 char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
     if (len_haystack == 0) return (char *)haystack; /* degenerate edge case */
@@ -137,607 +75,232 @@ char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, si
 }
 
 
-int get_content_lenght1(const char *buf, const int size, const char *lengthname) {
+int get_content_lenght(const char *buf, const int size) {
     const char *hit_ptr;
     int content_length;
-    hit_ptr = strnstr_(buf, lengthname, size, 15);
+    hit_ptr = strcasestr(buf, "content-length:");
     if (hit_ptr == NULL) {
         return -1;
     }
     char format [50];
-    strcpy(format,lengthname);
+    strncpy(format, hit_ptr, 15);
     strcat(format," %d");
-    fflush(stdout);
+    fflush(stdout);     // TODO: why
     if (sscanf(hit_ptr, format, &content_length) != 1) {
         return -1;
     }
     return content_length;
 }
 
-int get_content_lenght(const char *buf, const int size) {
-    int res = get_content_lenght1(buf, size, "Content-Length:");
-    if (res == -1)
-        res = get_content_lenght1(buf, size, "Content-length:");
-        if (res == -1)
-            res = get_content_lenght1(buf, size, "content-length:");
-    return res;
-}
 
-
-
-
-int get_request(int sock, char *buf, int *offset, int *action, char **content, int *length) {
-#ifndef NDEBUG 
-    printf("Offset: %d\n", *offset);
-#endif
-    int recv_size = 0;
-    int first_line_received = 0;
-    int header_received = 0;
-    char *http_body_start = NULL;
-    char method[16], recource[32];
-
-    while ((recv_size = read(sock, buf+(*offset), BUFFERSIZE-(*offset))) > 0) {
-#ifndef NDEBUG        
-        printf("received %d bytes\n", recv_size);
-        printf("%s\n", buf);
-#endif
-        *offset += recv_size;
-
-        if (!first_line_received) {
-            char *hit_ptr;
-            hit_ptr = strnstr_(buf, "\n", *offset, 1);
-            if (hit_ptr == NULL) {
-                continue;
-            }
-            first_line_received = 1;
-            // first line received
-            // it can be parsed for http method and recource
-            int n;
-            if ((n = sscanf(buf, "%15s %31s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
-#ifndef NDEBUG                
-                printf("HTTP Request: Method %s  Recource: %s\n", method, recource);
-#endif
-                if (strcmp(recource, "/procedureRevenueSelect/") == 0)
-                    *action = READ_QUERY;
-                else if (strcmp(recource, "/procedureRevenueInsert/") == 0)
-                    *action = WRITE_QUERY;
-                else if (strcmp(recource, "/new_master") == 0)
-                    *action = NEW_MASTER;
-                else if (strcmp(recource, "/number_of_slaves_1") == 0)
-                    *action = SET_SLAVES_1;
-                else if (strcmp(recource, "/number_of_slaves_2") == 0)
-                    *action = SET_SLAVES_2;
-                else if (strcmp(recource, "/number_of_slaves_3") == 0)
-                    *action = SET_SLAVES_3;
-                else if (strcmp(recource, "/number_of_slaves_4") == 0)
-                    *action = SET_SLAVES_4;
-                else if (strcmp(recource, "/number_of_slaves_5") == 0)
-                    *action = SET_SLAVES_5;
-                else if (strcmp(recource, "/number_of_slaves_6") == 0)
-                    *action = SET_SLAVES_6;
-                else if (strcmp(recource, "/number_of_slaves_7") == 0)
-                    *action = SET_SLAVES_7;
-                else if (strcmp(recource, "/statistics") == 0)
-                    *action = STATISTICS;
-                else if (strcmp(recource, "/delay") == 0)
-                    *action = DELAY_QUERY;
-                else {
-                    printf("ERROR! Unkown action! Resource: %s\n", recource);
-                }
-#ifndef NDEBUG                
-                printf("Resource: %s -> Action: %d\n", recource, *action);
-#endif
-
-                if ((strcmp(method, "POST") != 0) || (*action == 0)) {
-                    send(sock, answer, sizeof(answer), 0);
-                    return -1;
-                }
-            }
-            else {
-                printf("ERROR scanf %d\n", n);
-                return -1;
-            }
-        }
-
-        // first line received and checked successfully
-        // requested action was set
-        // check for content next
-        if (!header_received) {
-            char *hit_ptr;
-            hit_ptr = strnstr_(buf, "\r\n\r\n", *offset, 4);
-            http_body_start = hit_ptr + 4;
-            if (hit_ptr == NULL) {
-                printf("ERROR: not FOUND\n");
-                continue;
-            }
-            header_received = 1;
-            // header delimiter reached
-            *length = get_content_lenght(buf, *offset);
-            if (*length == -1)
-            {
-                printf("ERROR: Could not read content length!\n");
-                printf("%s\n", buf);
-                return -1;
-            } else {
-#ifndef NDEBUG
-               printf("Header Received #### Content-Length: %d\n", *length);
-#endif
-            }
-        }
-
-        // complete header was received
-        // check whether message is complete
-        if (http_body_start != NULL) {
-            if (((http_body_start - buf) + *length) == *offset) {
-#ifndef NDEBUG
-                printf("complete message received\n header: %ld\n", http_body_start-buf);
-#endif
-                *content = http_body_start;
-                return 0;
-                //perform_action(sock, http_body_start, content_length, requested_action);
-            }
-        }
-#ifndef NDEBUG
-        printf("Read...\n");
-#endif
-        fflush(stdout);
-    }
-#ifndef NDEBUG
-    printf("End of reception\n");
-#endif
-    fflush(stdout);
-    if (recv_size == -1) {
-        fprintf(stderr, "ERROR while receiving data\n");
-        return -1;
-    }
-
-    if ((action == 0) || (*content == NULL)) {
-        return -1;
-    }
-    return 0;
-}
-
-int get_response(int sock, char *buf, int *offset, int *status, char **content, int *content_length) {
-    int recv_size = 0;
-    int first_line_received = 0;
-    int header_received = 0;
-    char *http_body_start = NULL;
-
-    while ((recv_size = read(sock, buf+(*offset), BUFFERSIZE-(*offset))) > 0) {
-#ifndef NDEBUG
-        printf("received %d bytes\n", recv_size);
-        printf("%s\n", buf);
-#endif
-        *offset += recv_size;
-
-        if (!first_line_received) {
-            char *hit_ptr;
-            hit_ptr = strnstr_(buf, "\n", *offset, 1);
-            if (hit_ptr == NULL) {
-                continue;
-            }
-            first_line_received = 1;
-            // first line received
-            // it can be parsed for http method and recource
-            int n;
-            if ((n = sscanf(buf, "HTTP/1.1 %d", status)) == 1) {
-#ifndef NDEBUG
-                printf("HTTP Response status: %d\n", *status);
-#endif
-            }
-            else {
-                printf("ERROR----------------------- scanf %d\n", n);
-                return -1;
-            }
-	    if (*status != 200) {
-	      printf("Status: %d\n", *status);
-	      return -1;
-	    }
-        }
-
-        // first line received and checked successfully
-        // requested action was set
-        // check for content next
-        if (!header_received) {
-            char *hit_ptr;
-            hit_ptr = strnstr_(buf, "\r\n\r\n", *offset, 4);
-            http_body_start = hit_ptr + 4;
-            if (hit_ptr == NULL) {
-                printf("not FOUND\n");
-                continue;
-            }
-            header_received = 1;
-            // header delimiter reached
-            *content_length = get_content_lenght(buf, *offset);
-#ifndef NDEBUG
-            printf("Content-Length: %d\n", *content_length);
-#endif
-        }
-
-        // complete header was received
-        // check whether message is complete
-        if (http_body_start != NULL) {
-            if (((http_body_start - buf) + *content_length) == *offset) {
-#ifndef NDEBUG
-                printf("complete message received\n header: %ld\n", http_body_start-buf);
-#endif
-                *content = http_body_start;
-                return 0;
-                //perform_action(sock, http_body_start, content_length, requested_action);
-            }
-        }
-#ifndef NDEBUG
-        printf("Read...\n");
-#endif
-        fflush(stdout);
-    }
-
-#ifndef NDEBUG
-    printf("End of reception\n");
-#endif
-
-    if (recv_size <= 0) {
-        fprintf(stderr, "ERROR while receiving data\n");
-        return -1;
-    }
-
-    if (*content == NULL) {
-        return -1;
-    }
-    return 0;
-}
-
-
-int handle_request(int sock, int action, char *content, int content_length, int *socket_list) {
-
-#ifndef NDEBUG    
-    printf ("handle_request\n");
-    printf("ACTION: %d\n", action);
-#endif
-
-    int new_number_of_slaves = -1;
-    char* slaves_num_char = "0";
-    int i=0;
-    switch (action) {
-    case READ_QUERY: {
-        // pthread_mutex_lock(&global_lock);
-
-        int r = query_nr % active_hosts_num;
-
-        query_nr++;
-        // pthread_mutex_unlock(&global_lock);
-#ifndef NDEBUG
-        printf("Query sent to host %d\n", r);
-#endif
-        //int socketfd = get_socket(r);
-        int socketfd = socket_list[active_hosts[r]];
-
-        char *buf;
-        asprintf(&buf, http_post, "/procedureRevenueSelect/", content_length, content);
-        send(socketfd, buf, strlen(buf), 0);
-        free(buf);
-
-        int res_content_length = 0;
-        char res_buf[BUFFERSIZE];
-        char *res_content;
-        int offset = 0;
-        int status = 0;
-
-        int res = get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
-        if (res != -1) {
-	  	    __sync_add_and_fetch(&number_of_read_queries, 1);
-        }
-        else {
-            printf("ERROR: get_response: %d\n", res);
-        }
-
-        asprintf(&buf, http_response, res_content_length, res_content);
-
-        send(sock, buf, strlen(buf), 0);
-        free(buf);
-
-        break;
-    }
-    case WRITE_QUERY: {
-        //int socketfd = get_socket(current_master);
-        int socketfd = socket_list[current_master];
-#ifndef NDEBUG
-        printf("send write to master: %d\n", current_master);
-#endif
-        char *buf;
-        asprintf(&buf, http_post, "/procedureRevenueInsert/", content_length, content);
-        send(socketfd, buf, strlen(buf), 0);
-        free(buf);
-
-        int res_content_length = 0;
-        char res_buf[BUFFERSIZE];
-        char *res_content;
-        int offset = 0;
-        int status = 0;
-
-        if (get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length) != -1)
-	  __sync_add_and_fetch(&number_of_write_queries, 1);
-        asprintf(&buf, http_response, res_content_length, res_content);
-
-#ifndef NDEBUG
-        printf("Sending response!\n%s\n", buf);
-#endif
-
-
-        send(sock, buf, strlen(buf), 0);
-
-        free(buf);
-        break;
-    }
-    case DELAY_QUERY: {
-
-        int socketfd = socket_list[current_master];
-
-#ifndef NDEBUG
-        printf("send delay query to master: %d\n", current_master);
-#endif
-        char *buf;
-        asprintf(&buf, http_post, "/query/", content_length, content);
-        send(socketfd, buf, strlen(buf), 0);
-        free(buf);
-
-        int res_content_length = 0;
-        char res_buf[BUFFERSIZE];
-        char *res_content;
-        int offset = 0;
-        int status = 0;
-
-        get_response(socketfd, (char *)res_buf, &offset, &status, &res_content, &res_content_length);
-        asprintf(&buf, http_response, res_content_length, res_content);
-
-#ifndef NDEBUG
-        printf("Sending response!\n%s\n", buf);
-#endif
-        send(sock, buf, strlen(buf), 0);
-
-        free(buf);
-        break;
-    }
-    case NEW_MASTER:
-      if(!failoverdone){
-        printf("NEW MASTER INT TOWN!!!\n");
-        printf("old master: %d\n", current_master);
-        printf("old num hosts: %d\n", active_hosts_num);
-
-        int tmp = active_hosts[0];
-        active_hosts[0] = active_hosts[active_hosts_num-1];
-        active_hosts[active_hosts_num-1] = tmp;
-        active_hosts_num = active_hosts_num-1;
-        current_master = 1;
-
-
-        printf("new master: %d\n", current_master);
-        printf("new num hosts: %d\n", active_hosts_num);
-
-        printf("hosts:");
-        while (i<active_hosts_num) {
-            printf("%d.", active_hosts[i]);
-            ++i;
-        }
-        printf("\n");
-
-        send(sock, answer2, sizeof(answer2), 0);
-	failoverdone = 1;
-      } else {
-        printf("ERROR: only supporting one time failover!\n");
-        send(sock, NotImpl, sizeof(NotImpl), 0);
-        // exit(1);
-      }
-        break;
-    case SET_SLAVES_1:
-        printf("SETSLAVES to 1\n");
-        active_hosts_num = 2;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_2:
-        printf("SETSLAVES to 2\n");
-        active_hosts_num = 3;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_3:
-        printf("SETSLAVES to 3\n");
-        active_hosts_num = 4;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_4:
-        printf("SETSLAVES to 4\n");
-        active_hosts_num = 5;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_5:
-        printf("SETSLAVES to 5\n");
-        active_hosts_num = 6;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_6:
-        printf("SETSLAVES to 6\n");
-        active_hosts_num = 7;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case SET_SLAVES_7:
-        printf("SETSLAVES to 7\n");
-        active_hosts_num = 8;
-        send(sock, answer2, sizeof(answer2), 0);
-        break;
-    case STATISTICS:
-        ;
-        char *buf1;
-	char *buf2;
-	struct timeval tim;
-	gettimeofday(&tim, NULL);
-	char content[] = "{\"read\": %d, \"write\": %d, \"timestamp\": %f}\n";
-	int length = asprintf(&buf1, content, number_of_read_queries, 
-			      number_of_write_queries, tim.tv_sec+(tim.tv_usec/1000000.0)); 
-	asprintf(&buf2, http_response, length, buf1);
-	send(sock, buf2, strlen(buf2), 0);
-	return -1;
-	break;
-    default:
-        printf("ERROR: handle_request. Unkow ACTION.\n");
-        break;
-    }
-    fflush(stdout);
-
-    return 0;
-}
-
-
-
-void *new_connection(void *sock_p) {
-    int sock = *(int *)sock_p;
-    int action = 0;
-    int content_length = 0;
-    int offset = 0;
-    char buf[BUFFERSIZE];
-    char *content = NULL;
-
-    int socket_list[ANZAHL_HOSTS];
-
-    // initialize socket list. one socket for each host.
-    int i=0;
-    while (i < ANZAHL_HOSTS) {
-        socket_list[i] = get_socket(i);
-        ++i;
-    }
+void poll_requests(list request_queue) {
+    debug("Parser thread started");
 
     while (1) {
-        action = 0;
-        offset = 0;
-        content_length = 0;
-        content = NULL;
-        if (get_request(sock, buf, &offset, &action, &content, &content_length) == -1) {
-            close(sock);
-#ifndef NDEBUG
-            printf("connection closed\n");
-#endif
-            return 0;
-        }
-#ifndef NDEBUG
-        printf("CONTENT OF: %s\n", content);
-#endif
-        if (handle_request(sock, action, content, content_length, socket_list) == -1) {
-            close(sock);
 
-            // close all connections to hosts
-            int i=0;
-            while (i < ANZAHL_HOSTS) {
-                close(socket_list[i]);
-                ++i;
+        int not_empty_flag = 0;
+        int sock;
+
+        // get socket with request
+        pthread_mutex_lock(&request_queue_lock);
+        if (list_size(request_queue) != 0) {
+            sock = *((int *)list_get(request_queue, 0));
+            check(sock != 0,  "Error on list get.");
+            check(list_del(request_queue, 0) == SUCCESS, "Error on list delete entry.");
+            not_empty_flag = 1;
+        }
+        pthread_mutex_unlock(&request_queue_lock);
+        if (!not_empty_flag) {
+            continue;
+        }
+
+        char buf[BUFFERSIZE];
+        memset(buf, 0, BUFFERSIZE);
+        int offset = 0;
+        int recv_size = 0;
+        int first_line_received = 0;
+        int header_received = 0;
+        char *http_body_start = NULL;
+        char method[16], recource[64];
+        char *content = NULL;
+        int length = 0;
+
+        debug("new request handled by");
+
+        while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
+            debug("received %i bytes", recv_size);
+            offset += recv_size;
+
+            if (!first_line_received) {
+                char *hit_ptr;
+                hit_ptr = strnstr_(buf, "\n", offset, 1);
+                if (hit_ptr == NULL) {
+                    continue;
+                }
+                first_line_received = 1;
+                // first line received
+                // it can be parsed for http method and recource
+                int n;
+                if ((n = sscanf(buf, "%15s %63s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
+                    debug("HTTP Request: Method %s Recource: %s", method, recource);
+                } else {
+                    // TODO Error message
+                    printf("ERROR scanf \n");
+                    break;
+                }
             }
 
-#ifndef NDEBUG
-            printf("connection closed\n");
-#endif
-            return 0;
+            if (!header_received) {
+                char *hit_ptr;
+                hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
+                http_body_start = hit_ptr + 4;
+                if (hit_ptr == NULL) {
+                    debug("Waiting for header to be completed");
+                    continue;
+                }
+                header_received = 1;
+                // header delimiter reached
+                length = get_content_lenght(buf, offset);
+                if (length == -1)
+                {
+                    printf("ERROR: Could not read content length!\n");
+                    break;
+                } else {
+                    debug("Header Received #### Content-Length: %i", length);
+                }
+            }
+
+            // complete header was received
+            // check whether message is complete
+            if (http_body_start != NULL) {
+                if (((http_body_start - buf) + length) == offset) {
+                    debug("complete message received\n header:  %ld", http_body_start-buf);
+                    content = http_body_start;
+                    break;
+                }
+            }
         }
+
+
+        if (strncmp(recource, "/query/") == 0) {
+
+        }
+        else {
+            if (strncmp(recource, "/procedure/") == 0) {
+            }
+            else {
+                
+            }
+        }
+        // if (r.getResource() == "/query/") {
+        //     if (r.hasDecodedContent("query")) {
+        //         std::unique_ptr<Json::Value> root (new Json::Value);
+        //         if (m_reader.parse(r.getDecodedContent("query"), (*root)) == false) {
+        //             std::cerr << "Error parsing json:" << m_reader.getFormattedErrorMessages() << std::endl;
+        //             std::cout << r.getContent() << std::endl;
+        //             std::cout << r.getDecodedContent("query") << std::endl;
+        //             close(sock);
+        //             return;
+        //         }
+        //         dispatcher->dispatchQuery(r, sock, std::move(root));
+        //     } else {
+        //         dispatcher->dispatch(r, sock);
+        //     }
+        // } else if (r.getResource() == "/procedure/") {
+        //     dispatcher->dispatchProcedure(r, sock);
+        // } else {
+        //     dispatcher->dispatch(r, sock);
+        // }
     }
-    close(sock);
-    fflush(stdout);
+    return ;
+error :
+    printf("error\n");
+}
+
+int read_settings(char const* settings_file, list hosts) {
+
+    json_t *root;
+    json_error_t error;
+
+    root = json_load_file(settings_file, 0, &error);
+    check(root, "JSON_error");
+    
+    json_t *hosts_j = json_object_get(root, "hosts");
+    check(json_is_array(hosts_j) && json_array_size(hosts_j) != 0, "No or empty 'hosts' array in json.");
+
+    size_t index;
+    json_t *host_j;
+    host new_host;
+    json_array_foreach(hosts_j, index, host_j) {
+        json_t *ip_j = json_object_get(host_j, "url");
+        check(ip_j, "No url for host");
+        json_t *port_j = json_object_get(host_j, "port");
+        check(port_j, "No port for host");
+        char *ip;
+
+        new_host = malloc(sizeof(host_s));
+        json_unpack(ip_j, "s", &ip);
+        new_host->ip = strdup(ip);
+        json_unpack(port_j, "i", &(new_host->port));
+        printf("Add host %s:%d\n", new_host->ip, new_host->port);
+        list_add(hosts, new_host);
+    }
+
+    //OPTIONAL: read other Settings (Threads)
+
+    return 0;
+error:
+    return -1;
 }
 
 
 
-int main(int argc, char const *argv[])
-{
-    if (argc != 2) {
-        printf("USAGE: ./a.out PORT\n");
-        exit(1);
+
+int main(int argc, char const *argv[]) {
+    if (argc != 3) {
+        printf("USAGE: ./a.out PORT HOSTS_SETTINGS\n");
+        return -1;
     }
 
-    // handle sigterm
-    struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction));
-    action.sa_handler = term;
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGABRT, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
+    check(pthread_mutex_init(&request_queue_lock, NULL) == 0, "Mutex init failed.");
+    list request_queue = list_create((list_entryfree)&socket_free);
 
-    // ignore broken sockets
-    signal(SIGPIPE, SIG_IGN);
+    list hosts = list_create((list_entryfree)&host_free);
+    check(read_settings(argv[2], hosts) == 0, "while reading settings");
 
-    const char *Host = "0.0.0.0"; 
-    const char *Port = argv[1];
-    int n, errno;
+    int dispatcher_socket;
+    check((dispatcher_socket = create_dispatcher_socket(argv[1])) != -1, "while creating dispatcher socket");
 
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    if ((n = getaddrinfo(Host, Port, &hints, &res)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", strerror(n));
-        return 1;
-    }
 
-    if ((dispatcher_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        fprintf(stderr, "can't create socket: %s\n", strerror(errno));
-        return 2;
-    }
-    add_opensocket(dispatcher_socket);
+    debug("Dispatcher listening on port %s ...", argv[1]);
 
-    if (bind(dispatcher_socket, res->ai_addr, res->ai_addrlen) < 0) {
-        close(dispatcher_socket);
-        fprintf(stderr, "can't bind to socket: %s\n", strerror(errno));
-        return 2;
-    }
-
-    if (listen(dispatcher_socket, MAXPENDING) < 0) {
-        fprintf(stderr, "can't listen to socket: %s\n", strerror(errno));
-        return 2;
-    }
-
-    socklen_t client_addrlen = sizeof(client_addrlen);
+    socklen_t client_addrlen;
     struct sockaddr client_addr;
+    int client_socket;
 
-    pthread_t thread_ptrs[MAX_THREADS];
-    int thread_nr = 0;
-    int client_sockets[MAX_THREADS];
+    client_socket = sizeof(socklen_t);
 
-    if (pthread_mutex_init(&global_lock, NULL) != 0) {
-        fprintf(stderr, "ERROR on mutex_init\n");
-        exit(1);
-    };
-
-    printf("Dispatcher listening on port %s...\n", Port);
-    fflush(stdout);
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, (void *(*)(void *))poll_requests, request_queue);
 
     while(1) {
-        client_sockets[thread_nr] = accept(dispatcher_socket, &client_addr, &client_addrlen);
+        client_socket = accept(dispatcher_socket, &client_addr, &client_addrlen);
         
-        if (client_sockets[thread_nr] < 0) {
-            fprintf(stderr, "ERROR on accept\n");
-            exit(1);
+        if (client_socket < 0) {
+            printf("Error: on accept\n");
+            return -1;
         }
-
-
-        if (pthread_create(thread_ptrs + thread_nr, NULL, &new_connection, client_sockets + thread_nr) != 0) {
-            fprintf(stderr, "ERROR: pthread_create failed()\n");
-            exit(1);
-        }
-        thread_nr++;
-
-        if (client_addr.sa_family == AF_INET){
-            struct sockaddr_in *client_addr_ip4 = (struct sockaddr_in *) &client_addr;
-#ifndef NDEBUG            
-            printf("client %d\n", client_addr_ip4->sin_addr.s_addr);
-#endif
-        } else {
-            /* not an IPv4 address */
-        }
-        fflush(stdout);
+        int *socket_fd_p = malloc(sizeof(int));
+        *socket_fd_p = client_socket;
+        pthread_mutex_lock(&request_queue_lock);
+        list_add(request_queue, socket_fd_p);
+        pthread_mutex_unlock(&request_queue_lock);
     }
-
-    int i;
-    for (i=0; i < thread_nr; i++) {
-        pthread_join(thread_ptrs[i], NULL);
-    }
+ 
     close(dispatcher_socket);
-    pthread_mutex_destroy(&global_lock);
-
+    
     return 0;
+
+error:
+    return -1;
 }

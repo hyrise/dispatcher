@@ -1,11 +1,12 @@
 #include "HttpResponse.h"
 #include <cstring>
+#include <cstdlib>
 
 HttpResponse::HttpResponse() {
     m_content = new char[65535];
 };
 HttpResponse::~HttpResponse() {
-    free(m_content);
+    delete m_content;
 };
 
 void HttpResponse::setStatus(std::string status) {

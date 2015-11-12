@@ -48,6 +48,7 @@ def load_settings(path):
                 settings.append("--nodes="+host["numa_nodes"])
                 settings.append("--memorynodes="+host["numa_nodes"])
             print "Starting server: " + server, host["port"]
+            print settings
             proc = subprocess.Popen(settings, stdout=open(os.devnull, 'w'), stderr=open('logfile.log', 'a+'), preexec_fn=os.setpgrp)
             processes.append(proc)
             node_id += 1

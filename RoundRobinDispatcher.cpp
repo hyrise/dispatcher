@@ -1,16 +1,16 @@
-#include "SimpleRoundRobinDispatcher.h"
+#include "RoundRobinDispatcher.h"
 
-SimpleRoundRobinDispatcher::SimpleRoundRobinDispatcher(std::vector<Host>* hosts): AbstractDispatcher(hosts) {
+RoundRobinDispatcher::RoundRobinDispatcher(std::vector<Host> *hosts): AbstractDispatcher(hosts) {
     m_readCount.store(0);
     int thread_count = 10;
     for (int i = 1; i <= thread_count; ++i) {
-        m_threads.emplace_back(&SimpleRoundRobinDispatcher::execute, this);
+        m_threads.emplace_back(&RoundRobinDispatcher::execute, this);
     }
 };
 
-SimpleRoundRobinDispatcher::~SimpleRoundRobinDispatcher() {};
+RoundRobinDispatcher::~RoundRobinDispatcher() {};
 
-void SimpleRoundRobinDispatcher::execute() {
+void RoundRobinDispatcher::execute() {
     std::unique_ptr<HttpResponse> response;
     Host* host;
 
@@ -31,7 +31,7 @@ void SimpleRoundRobinDispatcher::execute() {
     }
 }
 
-int SimpleRoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
+int RoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     bool writeQuery = false;
     Json::Value operators;
     Json::Value obj_value(Json::objectValue);
@@ -53,7 +53,7 @@ int SimpleRoundRobinDispatcher::parseQuery(std::unique_ptr<Json::Value> query) {
     return 0;
 }
 
-void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void RoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
     std::unique_ptr<HttpResponse> response;
     unsigned int host_id, counter;
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -90,7 +90,7 @@ void SimpleRoundRobinDispatcher::dispatchQuery(HttpRequest& request, int sock, s
     }
 }
 
-void SimpleRoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
+void RoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int sock) {
     debug("dispatch procedure");
 
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -98,7 +98,7 @@ void SimpleRoundRobinDispatcher::dispatchProcedure(HttpRequest& request, int soc
     m_queue_cv.notify_one();
 }
 
-void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
+void RoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
     debug("dispatch");
 
     std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -106,7 +106,7 @@ void SimpleRoundRobinDispatcher::dispatch(HttpRequest& request, int sock) {
     m_queue_cv.notify_one();
 }
 
-void SimpleRoundRobinDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
+void RoundRobinDispatcher::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;
     int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";

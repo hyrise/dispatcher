@@ -17,7 +17,7 @@
 
 class StreamDispatcher : public AbstractDispatcher {
 public:
-    StreamDispatcher(std::vector<Host>* hosts);
+    StreamDispatcher(std::vector<Host> *hosts);
     ~StreamDispatcher();
 
     virtual void dispatch(HttpRequest& request, int sock);

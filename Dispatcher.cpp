@@ -1,78 +1,15 @@
-//C libraries
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <arpa/inet.h>
-#include <netdb.h>
+#include "Dispatcher.h"
+#include "dbg.h"
+#include "jsoncpp/json.h"
+#include "RoundRobinDispatcher.h"
+#include "StreamDispatcher.h"
 
-//C++ libraries
 #include <iostream>
 #include <fstream>
-#include <string>
-#include <vector>
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <chrono>
-#include <condition_variable>
+#include <sstream>
 
-#include "jsoncpp/json.h"
-
-#include "Host.h"
-#include "HttpRequest.h"
-#include "AbstractDispatcher.h"
-#include "SimpleRoundRobinDispatcher.h"
-#include "StreamDispatcher.h"
-#include "dbg.h"
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
-
-using namespace std;
-
-AbstractDispatcher* dispatcher;
-
-std::vector<std::thread> threads;
-std::vector<Host> hosts;
-std::queue<int> requests;
-
-std::mutex request_mtx;
-std::condition_variable request_cv;
-
-int create_dispatcher_socket (const char* port) {
-    int n, errno;
-    int sock_fd;
-
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    if ((n = getaddrinfo(NULL, port, &hints, &res)) != 0) {
-        std::cerr << "Error getaddrinfo: " << strerror(n) << std::endl;
-        return -1;
-    }
-
-    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        std::cerr << "Error: Can't create socket: " << strerror(errno) << std::endl;
-        return -1;
-    }
-
-    if (bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
-        close(sock_fd);
-        std::cerr << "Error: can't bind to socket: " << strerror(errno) << std::endl;
-        return -1;
-    }
-
-    if (listen(sock_fd, MAXPENDING) < 0) {
-        std::cerr << "Error: can't listen to socket: " << strerror(errno) << std::endl;
-        return -1;
-    }
-
-    return sock_fd;
-}
 
 char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
     if (len_haystack == 0) return (char *)haystack; /* degenerate edge case */
@@ -82,6 +19,7 @@ char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, si
         haystack++; }
     return NULL;
 }
+
 
 int get_content_lenght1(const char *buf, const int size, const char *lengthname) {
     const char *hit_ptr;
@@ -101,6 +39,7 @@ int get_content_lenght1(const char *buf, const int size, const char *lengthname)
 }
 
 int get_content_lenght(const char *buf, const int size) {
+    // TODO refactor
     int res = get_content_lenght1(buf, size, "Content-Length:");
     if (res == -1)
         res = get_content_lenght1(buf, size, "Content-length:");
@@ -109,22 +48,28 @@ int get_content_lenght(const char *buf, const int size) {
     return res;
 }
 
-void handle_server_failed() {
-    hosts.erase(hosts.begin());
-    dispatcher->notify("Host failed");
+void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
+    dispatcher->dispatch_requests(id);
 }
 
-void poll_requests(int id) {
+
+void Dispatcher::dispatch_requests(int id) {
     Json::Reader m_reader = Json::Reader();
 
     debug("Thread %i started", id);
 
     while (1) {
-        std::unique_lock<std::mutex> lck(request_mtx);
-        while (requests.empty()) request_cv.wait(lck);
-        int sock = requests.front();
-        requests.pop();
-        lck.unlock();
+        // Get an request out of the request queue
+        while (1) {
+            // TODO: Condition variables
+            request_queue_mutex.lock();
+            if (!request_queue.empty()) break;
+            request_queue_mutex.unlock();
+        }
+        int sock = request_queue.front();
+        request_queue.pop();
+        request_queue_mutex.unlock();
+
 
         HttpRequest r = HttpRequest();
 
@@ -210,36 +155,41 @@ void poll_requests(int id) {
                     close(sock);
                     return;
                 }
-                dispatcher->dispatchQuery(r, sock, std::move(root));
+                distributor->dispatchQuery(r, sock, std::move(root));
             } else {
-                dispatcher->dispatch(r, sock);
+                distributor->dispatch(r, sock);
             }
         } else if (r.getResource() == "/procedure/") {
-            dispatcher->dispatchProcedure(r, sock);
+            distributor->dispatchProcedure(r, sock);
         } else {
-            dispatcher->dispatch(r, sock);
+            distributor->dispatch(r, sock);
         }
     }
 }
 
-int read_settings(char const* path) {
-    std::ifstream settingsFile (path);
-    if (!settingsFile.is_open()) {
-        std::cerr << "Error: Could not find settings file" << std::endl;        
-        return -1;
+
+Dispatcher::Dispatcher(char *port, char *settings_file) {
+    this->port = port;
+
+    std::vector<Host> *hosts = new std::vector<Host>;
+
+    debug("Parse settings");
+
+    std::ifstream settingsFile(settings_file);
+    if (!settingsFile.is_open()) {        
+        throw "Could not find settings file.";
     }
     
     Json::Reader r = Json::Reader();
     Json::Value v;
+    debug("Parse settings");
     if (!r.parse(settingsFile, v, false)) {
-        std::cerr << "Error: Could not parse settings file! No valid JSON" << std::endl;
-        return -1;
+        throw "Could not parse settings file! No valid JSON.";
     }
 
     Json::Value jsonHosts = v.get("hosts", "");
     if (jsonHosts == "" || jsonHosts.isArray() == false || jsonHosts.size() == 0) {
-        std::cerr << "Error: Settings file does not contain any host" << std::endl;
-        return -1;
+        throw "Settings file does not contain any host.";
     }
     
     for (auto host: jsonHosts) {
@@ -247,69 +197,95 @@ int read_settings(char const* path) {
         int port = host.get("port", "0").asInt();
         if (url != "" and port != 0) {
             debug("Found host with address %s:%i", url.c_str(), port);
-            hosts.emplace_back(url, port);
+            hosts->emplace_back(url, port);
         }
     }
 
-    if (hosts.size() == 0) {
-        std::cerr << "Error: Settings file does not contain any valid hosts" << std::endl;
-        return -1;
+    if (hosts->size() == 0) {
+        throw "Settings file does not contain any valid hosts.";
     }
 
-    int thread_count = v.get("threads", 7).asInt();
-    for (int i = 1; i <= thread_count; ++i) {
-        threads.emplace_back(poll_requests, i);
-    }
+    thread_pool_size = v.get("threads", 7).asInt();
 
     std::string dispatchAlgorithm = v.get("algorithm", "SimpleRoundRobin").asString();
 
     if (dispatchAlgorithm == "Stream") {
-        dispatcher = new StreamDispatcher(&hosts);
+        distributor = new StreamDispatcher(hosts);
         debug("Used dispatching algorithm: Stream");
     } else {
         //SimpleRoundRobinDipatcher is the standard algorithm
-        dispatcher = new SimpleRoundRobinDispatcher(&hosts);
+        distributor = new RoundRobinDispatcher(hosts);
         debug("Used dispatching algorithm: SimpleRoundRobin");
     }
-
-    return 0;
 }
 
-int main(int argc, char const *argv[]) {
-    if (argc != 3) {
-        std::cout << "USAGE: ./a.out PORT HOSTS_SETTINGS" << std::endl;
-        return 1;
+
+int Dispatcher::create_socket() {
+    int n, errno;
+    int sock_fd;
+    std::stringstream error_stream;
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    if ((n = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+        error_stream << "Error getaddrinfo: " << strerror(n);
+        throw error_stream;
     }
 
-    if (read_settings(argv[2]) == -1)
-        return -1;
+    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
+        error_stream << "Error: Can't create socket: " << strerror(n);
+        throw error_stream;
+    }
 
-    int sock_fd;
-    if ((sock_fd = create_dispatcher_socket(argv[1])) == -1)
-        return -1;
+    if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+        close(sock_fd);
+        error_stream << "Error: can't bind to socket: " << strerror(n);
+        throw error_stream;
+    }
 
-    debug("Dispatcher listening on port %s ...", argv[1]);
+    if (listen(sock_fd, MAXPENDING) < 0) {
+        error_stream << "Error: can't listen to socket: " << strerror(n);
+        throw error_stream;
+    }
 
-    socklen_t client_addrlen = sizeof(socklen_t);
+    return sock_fd;
+}
+
+void Dispatcher::start() {
+    debug("Start dispatcher");
+
+    for (int i = 1; i <= thread_pool_size; ++i) {
+        parser_thread_pool.emplace_back(dispatch_requests_wrapper, this, i);
+    }
+
+    int socket = create_socket();
+    debug("Dispatcher: Listening on port %s", port);
+
+    socklen_t client_addrlen;
     struct sockaddr client_addr;
     int client_socket;
 
     while(1) {
-        client_socket = accept(sock_fd, &client_addr, &client_addrlen);
+        client_socket = accept(socket, &client_addr, &client_addrlen);
         
         if (client_socket < 0) {
-            std::cerr << "Error: on accept" << std::endl;
-            return -1;
+            throw "Error: on accept";
         }
         
-        std::unique_lock<std::mutex> lck(request_mtx);
-        requests.push(client_socket);
-        request_cv.notify_one();
+        request_queue_mutex.lock();
+        request_queue.push(client_socket);
+        request_queue_mutex.unlock();
     }
-
-    for (auto& th : threads) th.join();
-
-    close(sock_fd);
-    
-    return 0;
 }
+
+void Dispatcher::shut_down() {
+    debug("Shut down dispatcher");
+    for (auto& th : parser_thread_pool) {
+        th.join();
+    }
+}
+
+

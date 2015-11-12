@@ -1,5 +1,5 @@
-#ifndef SIMPLE_ROUND_ROBIN_DISPATCHER_H_
-#define SIMPLE_ROUND_ROBIN_DISPATCHER_H_
+#ifndef ROUND_ROBIN_DISPATCHER_H_
+#define ROUND_ROBIN_DISPATCHER_H_
 
 #include <iostream>
 #include <atomic>
@@ -15,10 +15,10 @@
 #include "HttpResponse.h"
 #include "dbg.h"
 
-class SimpleRoundRobinDispatcher : public AbstractDispatcher {
+class RoundRobinDispatcher : public AbstractDispatcher {
 public:
-    SimpleRoundRobinDispatcher(std::vector<Host>* hosts);
-    ~SimpleRoundRobinDispatcher();
+    RoundRobinDispatcher(std::vector<Host> *hosts);
+    ~RoundRobinDispatcher();
 
     virtual void dispatch(HttpRequest& request, int sock);
     virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query);

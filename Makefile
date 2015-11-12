@@ -1,42 +1,34 @@
-OBJS = dispatcher.o Host.o HttpRequest.o HttpResponse.o StreamDispatcher.o SimpleRoundRobinDispatcher.o jsoncpp.o
+OBJS = Dispatcher.o jsoncpp.o RoundRobinDispatcher.o StreamDispatcher.o Host.o HttpRequest.o HttpResponse.o
 CXX = g++
-CXXFLAGS = -Wall -c -std=c++11
-LFLAGS = -Wall
-LDLIBS = -lpthread
+CXXFLAGS = -Wall -std=c++11 -O3
 INCLUDEPATHS = ./jsoncpp
 
-all: CXXFLAGS += -DNDEBUG -O3
-all: dispatcher
+all: start_dispatcher
 
-debug: CXXFLAGS += -DDEBUG -g -O0
-debug: dispatcher
+start_dispatcher : $(OBJS) main.cpp
+	$(CXX) main.cpp $(OBJS) -o start_dispatcher
 
-dispatcher : $(OBJS)
-	$(CXX) $(LFLAGS) -I $(INCLUDEPATHS) $(OBJS) -o dispatcher $(LDLIBS)
+Dispatcher.o : Dispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c Dispatcher.cpp
 
-dispatcher.o : dispatcher.cpp Host.h HttpRequest.h jsoncpp/json.h AbstractDispatcher.h SimpleRoundRobinDispatcher.h
-	$(CXX) $(CXXFLAGS) dispatcher.cpp
+
+RoundRobinDispatcher.o : RoundRobinDispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c RoundRobinDispatcher.cpp
+
+StreamDispatcher.o : StreamDispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c StreamDispatcher.cpp
 
 Host.o : Host.h Host.cpp HttpRequest.h HttpResponse.h
-	$(CXX) $(CXXFLAGS) Host.cpp
+	$(CXX) $(CXXFLAGS) -c Host.cpp
 
 HttpRequest.o : HttpRequest.h HttpRequest.cpp 
-	$(CXX) $(CXXFLAGS) HttpRequest.cpp
+	$(CXX) $(CXXFLAGS) -c HttpRequest.cpp
 
 HttpResponse.o : HttpResponse.h HttpResponse.cpp 
-	$(CXX) $(CXXFLAGS) HttpResponse.cpp
-
-SimpleRoundRobinDispatcher.o : SimpleRoundRobinDispatcher.h SimpleRoundRobinDispatcher.cpp AbstractDispatcher.h Host.h HttpRequest.h HttpResponse.h
-	$(CXX) $(CXXFLAGS) SimpleRoundRobinDispatcher.cpp
-
-StreamDispatcher.o : StreamDispatcher.h StreamDispatcher.cpp AbstractDispatcher.h Host.h HttpRequest.h HttpResponse.h
-	$(CXX) $(CXXFLAGS) StreamDispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c HttpResponse.cpp
 
 jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
-	$(CXX) -c -std=c++11 -I $(INCLUDEPATHS) jsoncpp/jsoncpp.cpp
+	$(CXX) $(CXXFLAGS) -I $(INCLUDEPATHS) -c jsoncpp/jsoncpp.cpp
 
 clean:
-	rm *.o dispatcher
-
-#all: dispatcher.cpp
-#	g++ -std=c++11 -I ./jsoncpp dispatcher.cpp Host.cpp HttpRequest.cpp SimpleRoundRobinDispatcher.cpp jsoncpp/jsoncpp.cpp -o dispatcher -lpthread
+	rm *.o start_dispatcher
