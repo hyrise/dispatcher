@@ -2,34 +2,38 @@
 
 #define BUFFERSIZE 65535
 
-Host::Host(std::string url, int port, bool isMaster):
-        m_url(url), m_port(port), m_master(isMaster) {};
+Host::Host(std::string url, int port, bool is_master) {
+    this->url = url;
+    this->port = port;
+    this->is_master = is_master;
+}
+
 
 Host::~Host() {
 }
 
 bool Host::getMaster() {
-    return m_master;
+    return is_master;
 }
 
-void Host::setMaster(bool isMaster) {
-    m_master = isMaster;
+void Host::setMaster(bool is_master) {
+    this->is_master = is_master;
 }
 
 std::string Host::getUrl() {
-    return m_url;
+    return url;
 }
 
 void Host::setUrl(std::string url) {
-    m_url = url;
+    this->url = url;
 }
 
 int Host::getPort() {
-    return m_port;
+    return port;
 }
 
 void Host::setPort(int port) {
-    m_port = port;
+    this->port = port;
 }
 
 char *Host::strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
@@ -172,8 +176,8 @@ int Host::openConnection() {
     //---Initialize server address/port struct
     bzero(&dest, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr(this->m_url.data());
-    dest.sin_port = htons(this->m_port);
+    dest.sin_addr.s_addr = inet_addr(this->url.data());
+    dest.sin_port = htons(this->port);
 
     //---Connect to server
     if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {

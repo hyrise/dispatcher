@@ -15,7 +15,7 @@
 #include "HttpResponse.h"
 #include "dbg.h"
 
-class RoundRobinDistributor : public AbstractDistributor {
+class RoundRobinDistributor: public AbstractDistributor {
 public:
     RoundRobinDistributor(std::vector<Host> *hosts);
     ~RoundRobinDistributor();
@@ -26,9 +26,9 @@ public:
 
     void execute();
 private:
-    std::atomic<unsigned int> m_readCount;
+    std::atomic<unsigned int> read_counter;
     const unsigned int m_boundary = std::numeric_limits<unsigned int>::max() / 2;
-    std::vector<std::thread> m_threads;
+    std::vector<std::thread> thread_pool;
     std::mutex m_queue_mtx;
     std::condition_variable m_queue_cv;
 

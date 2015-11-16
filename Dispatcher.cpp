@@ -206,9 +206,9 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 
     thread_pool_size = v.get("threads", 7).asInt();
 
-    std::string dispatchAlgorithm = v.get("algorithm", "RoundRobin").asString();
+    std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
 
-    if (dispatchAlgorithm == "Stream") {
+    if (dispatch_algorithm == "Stream") {
         distributor = new StreamDistributor(hosts);
         debug("Used dispatching algorithm: Stream");
     } else {

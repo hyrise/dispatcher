@@ -1,10 +1,11 @@
 #include "RoundRobinDistributor.h"
 
+
 RoundRobinDistributor::RoundRobinDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
-    m_readCount.store(0);
+    read_counter.store(0);
     int thread_count = 10;
     for (int i = 1; i <= thread_count; ++i) {
-        m_threads.emplace_back(&RoundRobinDistributor::execute, this);
+        thread_pool.emplace_back(&RoundRobinDistributor::execute, this);
     }
 };
 
@@ -12,7 +13,7 @@ RoundRobinDistributor::~RoundRobinDistributor() {};
 
 void RoundRobinDistributor::execute() {
     std::unique_ptr<HttpResponse> response;
-    Host* host;
+    Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_queue_mtx);

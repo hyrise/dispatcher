@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        std::cout << "USAGE: ./a.out PORT HOSTS_SETTINGS" << std::endl;
+        std::cout << "USAGE: ./start_dispatcher PORT HOSTS_SETTINGS" << std::endl;
         return -1;
     }
 

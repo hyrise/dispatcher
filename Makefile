@@ -1,12 +1,12 @@
 OBJS = Dispatcher.o jsoncpp.o RoundRobinDistributor.o StreamDistributor.o Host.o HttpRequest.o HttpResponse.o
 CXX = g++
-CXXFLAGS = -Wall -std=c++11 -O3
+CXXFLAGS = -Wall -std=c++11 -O3 -lpthread
 INCLUDEPATHS = ./jsoncpp
 
 all: start_dispatcher
 
 start_dispatcher : $(OBJS) main.cpp
-	$(CXX) main.cpp $(OBJS) -o start_dispatcher
+	$(CXX) -std=c++11 -lpthread main.cpp $(OBJS) -o start_dispatcher
 
 Dispatcher.o : Dispatcher.cpp
 	$(CXX) $(CXXFLAGS) -c Dispatcher.cpp

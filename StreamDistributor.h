@@ -15,7 +15,7 @@
 #include "HttpResponse.h"
 #include "dbg.h"
 
-class StreamDistributor : public AbstractDistributor {
+class StreamDistributor: public AbstractDistributor {
 public:
     StreamDistributor(std::vector<Host> *hosts);
     ~StreamDistributor();

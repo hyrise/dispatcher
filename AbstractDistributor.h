@@ -10,8 +10,7 @@
 
 class AbstractDistributor {
 public:
-    AbstractDistributor(std::vector<Host> *hosts)
-    {
+    AbstractDistributor(std::vector<Host> *hosts) {
         cluster_nodes = hosts;
     };
     virtual void dispatch(HttpRequest& request, int sock) = 0;
