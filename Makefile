@@ -1,14 +1,34 @@
+OBJS = Dispatcher.o jsoncpp.o RoundRobinDistributor.o StreamDistributor.o Host.o HttpRequest.o HttpResponse.o
+CXX = g++
+CXXFLAGS = -Wall -std=c++11 -O3 -lpthread
+INCLUDEPATHS = ./jsoncpp
+
+all: start_dispatcher
+
+start_dispatcher : $(OBJS) main.cpp
+	$(CXX) -std=c++11 -lpthread main.cpp $(OBJS) -o start_dispatcher
+
+Dispatcher.o : Dispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c Dispatcher.cpp
 
 
-all: dispatcher.c
-	gcc dispatcher.c -O3 -g -DNDEBUG -o dispatcher -lpthread
+RoundRobinDistributor.o : RoundRobinDistributor.cpp
+	$(CXX) $(CXXFLAGS) -c RoundRobinDistributor.cpp
 
-test: unit_tests
-	./unit_tests
+StreamDistributor.o : StreamDistributor.cpp
+	$(CXX) $(CXXFLAGS) -c StreamDistributor.cpp
 
-unit_tests: unit_tests.cpp 
-	g++ -std=c++0x unit_tests.cpp gtest/main.cpp gtest/gtest-all.cpp gtest/MinimalistPrinter.cpp  -o unit_tests -lpthread
-debug: dispatcher.c
-	gcc dispatcher.c -O0 -g -o dispatcher -lpthread
+Host.o : Host.h Host.cpp HttpRequest.h HttpResponse.h
+	$(CXX) $(CXXFLAGS) -c Host.cpp
 
-.PHONY: test
+HttpRequest.o : HttpRequest.h HttpRequest.cpp 
+	$(CXX) $(CXXFLAGS) -c HttpRequest.cpp
+
+HttpResponse.o : HttpResponse.h HttpResponse.cpp 
+	$(CXX) $(CXXFLAGS) -c HttpResponse.cpp
+
+jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
+	$(CXX) $(CXXFLAGS) -I $(INCLUDEPATHS) -c jsoncpp/jsoncpp.cpp
+
+clean:
+	rm *.o start_dispatcher
