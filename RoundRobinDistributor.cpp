@@ -65,10 +65,10 @@ void RoundRobinDistributor::dispatchQuery(HttpRequest& request, int sock, std::u
         readQuery = 1;
     switch (readQuery) {
     case 0:
-        counter = m_readCount.fetch_add(1);
+        counter = read_counter.fetch_add(1);
         //avoid numeric overflow, reset read count after half of unsigned int range queries
         if (counter == m_boundary)
-            m_readCount.fetch_sub(m_boundary);
+            read_counter.fetch_sub(m_boundary);
         host_id = counter % cluster_nodes->size();
 
         m_parsedRequests.emplace(request, host_id, sock);
