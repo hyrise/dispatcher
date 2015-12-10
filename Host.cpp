@@ -1,4 +1,7 @@
 #include "Host.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #define BUFFERSIZE 65535
 
@@ -166,8 +169,10 @@ Connection: Keep-Alive\r\n\r\n\
 }
 
 int Host::openConnection() {
-    int sock;
+    int sock, s;
     struct sockaddr_in dest;
+    struct addrinfo hints;
+    struct addrinfo *result;
 
     if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
         std::cerr << "ERROR: could not create a socket" << std::endl;
@@ -176,7 +181,22 @@ int Host::openConnection() {
     //---Initialize server address/port struct
     bzero(&dest, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr(this->url.data());
+
+    //get server address by host name instead of IP
+    bzero(&hints, sizeof(hints));
+    hints.ai_flags = AI_ALL;
+    hints.ai_family = PF_INET;
+    hints.ai_protocol = 0;
+
+    s = getaddrinfo(this->url.c_str(), NULL, &hints, &result);
+    if (s != 0) {
+       fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+       exit(EXIT_FAILURE);
+    }
+
+    dest.sin_addr.s_addr = *((unsigned long*)&(((sockaddr_in*)result->ai_addr)->sin_addr));
+
+    // dest.sin_addr.s_addr = inet_addr(this->url.data());
     dest.sin_port = htons(this->port);
 
     //---Connect to server

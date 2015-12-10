@@ -32,6 +32,5 @@ USER hyrise
 WORKDIR /home/hyrise/dispatcher
 
 RUN make
-
-WORKDIR /home/hyrise/
+RUN cp settings.json.example settings.json
 

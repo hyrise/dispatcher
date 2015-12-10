@@ -1,7 +1,7 @@
 {
     "hosts": [
-        {"url": "127.0.0.1", "port": 5000, "core_count": 4, "core_offset": 0},
-        {"url": "127.0.0.1", "port": 5001, "core_count": 4, "core_offset": 4}
+        {"url": "hyrise1", "port": 6000, "core_count": 4, "core_offset": 0},
+        {"url": "hyrise2", "port": 6001, "core_count": 4, "core_offset": 4}
     ],
     "threads": 4,
     "port": 8080,
