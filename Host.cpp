@@ -1,4 +1,5 @@
 #include "Host.h"
+#include "dbg.h"
 
 #define BUFFERSIZE 65535
 
@@ -83,7 +84,7 @@ Connection: Keep-Alive\r\n\r\n\
     char *buf;
     int allocatedBytes = asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request.getContentLength(), request.getContent());
     if (allocatedBytes == -1) {
-	std::cerr << "Error during creating request" << std::endl;
+	log_err("Error during creating request.");
         return NULL;
     }
     send(sock, buf, strlen(buf), 0);
@@ -118,13 +119,13 @@ Connection: Keep-Alive\r\n\r\n\
                 response->setStatus(status);
 		        debug("HTTP Response status: %i", status);
             } else {
-                std::cerr << "ERROR----------------------- scanf " << n << std::endl;
+                log_err("ERROR----------------------- scanf %d", n);
                 close(sock);
                 return NULL;
             }
 	        if (status != 200) {
                 close(sock);
-                std::cerr << "Wrong Status" << std::endl;
+                log_err("Wrong Status");
 	            return NULL;
 	        }
         }
@@ -136,7 +137,7 @@ Connection: Keep-Alive\r\n\r\n\
             hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
             http_body_start = hit_ptr + 4;
             if (hit_ptr == NULL) {
-                std::cerr << "not FOUND" << std::endl;
+                log_err("not FOUND");
                 continue;
             }
             header_received = 1;
@@ -170,7 +171,7 @@ int Host::openConnection() {
     struct sockaddr_in dest;
 
     if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
-        std::cerr << "ERROR: could not create a socket" << std::endl;
+        log_err("ERROR: could not create a socket.");
     }
 
     //---Initialize server address/port struct
@@ -181,7 +182,7 @@ int Host::openConnection() {
 
     //---Connect to server
     if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
-        std::cerr << "ERROR: could not connect to host"  << std::endl;
+        log_err("ERROR: could not connect to host.");
     }
 
     return sock;

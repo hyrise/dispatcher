@@ -1,4 +1,5 @@
 #include "RoundRobinDistributor.h"
+#include "dbg.h"
 
 
 RoundRobinDistributor::RoundRobinDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
@@ -38,7 +39,7 @@ int RoundRobinDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
     Json::Value obj_value(Json::objectValue);
     
     if (!query->isObject() || query->isMember("operators") == false) {
-        std::cerr << "query content does not contain any operators";
+        log_err("query content does not contain any operators.");
         return -1;
     }
     operators = query->get("operators", obj_value);
@@ -117,7 +118,7 @@ void RoundRobinDistributor::sendResponse(std::unique_ptr<HttpResponse> response,
 	    allocatedBytes = asprintf(&buf, http_response, 0, "");
     }
     if (allocatedBytes == -1) {
-        std::cerr << "An error occurred while creating response" << std::endl;
+        log_err("An error occurred while creating response.");
         send(sock, error_response, strlen(error_response), 0);
         close(sock);
         return;
