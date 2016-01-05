@@ -108,7 +108,7 @@ void Dispatcher::dispatch_requests(int id) {
                     r.setResource(recource);
                     debug("HTTP Request: Method %s Recource: %s", method, recource);
                 } else {
-                    std::cerr << "ERROR scanf " << n << std::endl;
+                    log_err("ERROR scanf %d", n);
                     break;
                 }
             }
@@ -118,7 +118,7 @@ void Dispatcher::dispatch_requests(int id) {
                 hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
                 http_body_start = hit_ptr + 4;
                 if (hit_ptr == NULL) {
-                    std::cerr << "ERROR: not FOUND" << std::endl;
+                    log_err("ERROR: not FOUND");
                     continue;
                 }
                 header_received = 1;
@@ -127,7 +127,7 @@ void Dispatcher::dispatch_requests(int id) {
                 r.setContentLength(length);
                 if (length == -1)
                 {
-                    std::cerr << "ERROR: Could not read content length!" << std::endl;
+                    log_err("ERROR: Could not read content length!");
                     break;
                 } else {
                     debug("Header Received #### Content-Length: %i", length);
@@ -151,9 +151,9 @@ void Dispatcher::dispatch_requests(int id) {
             if (r.hasDecodedContent("query")) {
                 std::unique_ptr<Json::Value> root (new Json::Value);
                 if (m_reader.parse(r.getDecodedContent("query"), (*root)) == false) {
-                    std::cerr << "Error parsing json:" << m_reader.getFormattedErrorMessages() << std::endl;
-                    std::cout << r.getContent() << std::endl;
-                    std::cout << r.getDecodedContent("query") << std::endl;
+                    log_err("Error parsing json: %s", m_reader.getFormattedErrorMessages().c_str());
+                    debug("%s", r.getContent());
+                    debug("%s", r.getDecodedContent("query").c_str());
                     close(sock);
                     return;
                 }
@@ -174,7 +174,8 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     this->port = port;
 
     std::ifstream settingsFile(settings_file);
-    if (!settingsFile.is_open()) {        
+    if (!settingsFile.is_open()) {
+        log_err("Could not find settings file.");
         throw "Could not find settings file.";
     }
     
@@ -182,11 +183,13 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     Json::Value v;
     debug("Parse settings");
     if (!r.parse(settingsFile, v, false)) {
+        log_err("Could not parse settings file! No valid JSON.");
         throw "Could not parse settings file! No valid JSON.";
     }
 
     Json::Value jsonHosts = v.get("hosts", "");
     if (jsonHosts == "" || jsonHosts.isArray() == false || jsonHosts.size() == 0) {
+        log_err("Settings file does not contain any host.");
         throw "Settings file does not contain any host.";
     }
     
@@ -201,6 +204,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     }
 
     if (hosts->size() == 0) {
+        log_err("Settings file does not contain any valid hosts.");
         throw "Settings file does not contain any valid hosts.";
     }
 
@@ -220,34 +224,32 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 
 
 int Dispatcher::create_socket() {
-    int n, errno;
-    int sock_fd;
-    std::stringstream error_stream;
+    int sock_fd, s;
 
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    if ((n = getaddrinfo(NULL, port, &hints, &res)) != 0) {
-        error_stream << "Error getaddrinfo: " << strerror(n);
-        throw error_stream;
+    if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+        log_err("Error getaddrinfo: %s", gai_strerror(s));
+        throw("Error getaddrinfo.");
     }
 
     if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        error_stream << "Error: Can't create socket: " << strerror(n);
-        throw error_stream;
+        log_err("Error: Can't create socket.");
+        throw "Error: Can't create socket.";
     }
 
     if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
         close(sock_fd);
-        error_stream << "Error: can't bind to socket: " << strerror(n);
-        throw error_stream;
+        log_err("Error: can't bind to socket.");
+        throw "Error: can't bind to socket.";
     }
 
     if (listen(sock_fd, MAXPENDING) < 0) {
-        error_stream << "Error: can't listen to socket: " << strerror(n);
-        throw error_stream;
+        log_err("Error: can't listen to socket.");
+        throw "Error: can't listen to socket.";
     }
 
     return sock_fd;
@@ -273,7 +275,8 @@ void Dispatcher::start() {
     while(1) {
         client_socket = accept(socket, &client_addr, &client_addrlen);
         if (client_socket < 0) {
-            throw "Error: on accept";
+            log_err("Error: on accept.");
+            throw "Error: on accept.";
         }
         
         request_queue_mutex.lock();
