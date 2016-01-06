@@ -33,80 +33,43 @@ void RoundRobinDistributor::execute() {
     }
 }
 
-int RoundRobinDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
-    bool writeQuery = false;
-    Json::Value operators;
-    Json::Value obj_value(Json::objectValue);
-    
-    if (!query->isObject() || query->isMember("operators") == false) {
-        log_err("query content does not contain any operators.");
-        return -1;
-    }
-    operators = query->get("operators", obj_value);
 
-    for (auto op: operators) {
-        auto type = op.get("type", "").asString();
-        if (type == "InsertScan" or type == "Delete" or type == "PosUpdateIncrementScan" or type == "PosUpdateScan") writeQuery = true;
-        if (type == "TableLoad") return 2;
-    }
-
-    if (writeQuery) return 1;
-
-    return 0;
-}
-
-void RoundRobinDistributor::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
-    std::unique_ptr<HttpResponse> response;
+void RoundRobinDistributor::distribute(HttpRequest& request, int sock) {
     unsigned int host_id, counter;
     std::unique_lock<std::mutex> lck(m_queue_mtx);
 
-    debug("dispatch query");
-    int readQuery = parseQuery(std::move(query));
-    if (request.hasDecodedContent("oltp") and request.getDecodedContent("oltp") == "true")
-        readQuery = 1;
-    switch (readQuery) {
-    case 0:
-        counter = read_counter.fetch_add(1);
-        //avoid numeric overflow, reset read count after half of unsigned int range queries
-        if (counter == m_boundary)
-            read_counter.fetch_sub(m_boundary);
-        host_id = counter % cluster_nodes->size();
+    debug("Dispatch query.");
 
-        m_parsedRequests.emplace(request, host_id, sock);
-        m_queue_cv.notify_one();
-        
-        break;
-    case 1:
-        m_parsedRequests.emplace(request, 0, sock);
-        m_queue_cv.notify_one();
-        break;
-    case 2:
-        for (Host host : *cluster_nodes) {
-            response = host.executeRequest(request);
-        }
-        close(sock);
-        debug("load table");
-        break;
-    default:
-        return;
+    counter = read_counter.fetch_add(1);
+    //avoid numeric overflow, reset read count after half of unsigned int range queries
+    if (counter == m_boundary)
+        read_counter.fetch_sub(m_boundary);
+    host_id = counter % cluster_nodes->size();
+
+    m_parsedRequests.emplace(request, host_id, sock);
+    m_queue_cv.notify_one();
+}
+
+
+void RoundRobinDistributor::sendToAll(HttpRequest& request, int sock) {
+    debug("Load table.");
+    for (Host host : *cluster_nodes) {
+        std::unique_ptr<HttpResponse> response = host.executeRequest(request);
     }
+    close(sock);
+    // TODO send response
 }
 
-void RoundRobinDistributor::dispatchProcedure(HttpRequest& request, int sock) {
-    debug("dispatch procedure");
+
+
+void RoundRobinDistributor::sendToMaster(HttpRequest& request, int sock) {
+    debug("Send request to master.");
 
     std::unique_lock<std::mutex> lck(m_queue_mtx);
     m_parsedRequests.emplace(request, 0, sock);
     m_queue_cv.notify_one();
 }
 
-void RoundRobinDistributor::dispatch(HttpRequest& request, int sock) {
-    debug("dispatch");
-
-    std::unique_lock<std::mutex> lck(m_queue_mtx);
-    m_parsedRequests.emplace(request, 0, sock);
-    m_queue_cv.notify_one();
-}
 
 void RoundRobinDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;

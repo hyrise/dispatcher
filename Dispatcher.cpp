@@ -87,10 +87,10 @@ void Dispatcher::dispatch_requests(int id) {
         char *content = NULL;
         int length = 0;
 
-        debug("new request handled by %i", id);
+        debug("New request: Handled by thread %i", id);
 
         while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
-            debug("received %i bytes", recv_size);
+            debug("Received %i bytes.", recv_size);
             offset += recv_size;
 
             if (!first_line_received) {
@@ -146,26 +146,7 @@ void Dispatcher::dispatch_requests(int id) {
                 }
             }
         }
-
-        if (r.getResource() == "/query/") {
-            if (r.hasDecodedContent("query")) {
-                std::unique_ptr<Json::Value> root (new Json::Value);
-                if (m_reader.parse(r.getDecodedContent("query"), (*root)) == false) {
-                    log_err("Error parsing json: %s", m_reader.getFormattedErrorMessages().c_str());
-                    debug("%s", r.getContent());
-                    debug("%s", r.getDecodedContent("query").c_str());
-                    close(sock);
-                    return;
-                }
-                distributor->dispatchQuery(r, sock, std::move(root));
-            } else {
-                distributor->dispatch(r, sock);
-            }
-        } else if (r.getResource() == "/procedure/") {
-            distributor->dispatchProcedure(r, sock);
-        } else {
-            distributor->dispatch(r, sock);
-        }
+        distributor->dispatch(r, sock);
     }
 }
 

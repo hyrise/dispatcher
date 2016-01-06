@@ -19,9 +19,9 @@ public:
     RoundRobinDistributor(std::vector<Host> *hosts);
     ~RoundRobinDistributor();
 
-    virtual void dispatch(HttpRequest& request, int sock);
-    virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query);
-    virtual void dispatchProcedure(HttpRequest& request, int sock);
+    virtual void sendToMaster(HttpRequest& request, int sock);
+    virtual void sendToAll(HttpRequest& request, int sock);
+    virtual void distribute(HttpRequest& request, int sock);
 
     void execute();
 private:
@@ -43,7 +43,6 @@ private:
     };
     std::queue<m_requestTuple_t> m_parsedRequests;
 
-    int parseQuery(std::unique_ptr<Json::Value> query);
     void sendResponse(std::unique_ptr<HttpResponse> response, int sock);
 };
 

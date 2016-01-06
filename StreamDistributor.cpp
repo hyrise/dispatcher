@@ -54,75 +54,35 @@ void StreamDistributor::executeWrite() {
     }
 }
 
-int StreamDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
-    bool writeQuery = false;
-    Json::Value operators;
-    Json::Value obj_value(Json::objectValue);
-    
-    if (!query->isObject() || query->isMember("operators") == false) {
-        log_err("query content does not contain any operators");
-        return -1;
-    }
-    operators = query->get("operators", obj_value);
 
-    for (auto op: operators) {
-        auto type = op.get("type", "").asString();
-        if (type == "InsertScan" or type == "Delete" or type == "PosUpdateIncrementScan" or type == "PosUpdateScan") writeQuery = true;
-        if (type == "TableLoad") return 2;
-    }
-
-    if (writeQuery) return 1;
-
-    return 0;
-}
-
-void StreamDistributor::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void StreamDistributor::distribute(HttpRequest& request, int sock) {
     std::unique_ptr<HttpResponse> response;
     std::unique_lock<std::mutex> lck;
 
-    debug("dispatch query");
-    int readQuery = parseQuery(std::move(query));
-    if (request.hasDecodedContent("oltp") and request.getDecodedContent("oltp") == "true")
-        readQuery = 1;
-    switch (readQuery) {
-    case 0:
-        lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
-        m_parsedReads.emplace(request, 0, sock);
-        m_read_queue_cv.notify_one();
-        
-        break;
-    case 1:
-        lck = std::unique_lock<std::mutex>(m_write_queue_mtx);
-        m_parsedWrites.emplace(request, 0, sock);
-        m_write_queue_cv.notify_one();
-        break;
-    case 2:
-        for (Host host : *cluster_nodes) {
-            response = host.executeRequest(request);
-        }
-        close(sock);
-        debug("load table");
-        break;
-    default:
-        return;
+    lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
+    m_parsedReads.emplace(request, 0, sock);
+    m_read_queue_cv.notify_one();
+}
+
+
+void StreamDistributor::sendToAll(HttpRequest& request, int sock) {
+    debug("Load table.");
+    for (Host host : *cluster_nodes) {
+        std::unique_ptr<HttpResponse> response = host.executeRequest(request);
     }
+    close(sock);
+    // TODO send response
 }
 
-void StreamDistributor::dispatchProcedure(HttpRequest& request, int sock) {
-    debug("dispatch procedure");
+
+void StreamDistributor::sendToMaster(HttpRequest& request, int sock) {
+    debug("Dispatch procedure.");
 
     std::unique_lock<std::mutex> lck(m_write_queue_mtx);
     m_parsedWrites.emplace(request, 0, sock);
     m_write_queue_cv.notify_one();
 }
 
-void StreamDistributor::dispatch(HttpRequest& request, int sock) {
-    debug("dispatch");
-
-    std::unique_lock<std::mutex> lck(m_write_queue_mtx);
-    m_parsedWrites.emplace(request, 0, sock);
-    m_write_queue_cv.notify_one();
-}
 
 void StreamDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
     char *buf;

@@ -19,9 +19,11 @@ public:
     StreamDistributor(std::vector<Host> *hosts);
     ~StreamDistributor();
 
-    virtual void dispatch(HttpRequest& request, int sock);
-    virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query);
-    virtual void dispatchProcedure(HttpRequest& request, int sock);
+    virtual void sendToMaster(HttpRequest& request, int sock);
+    virtual void sendToAll(HttpRequest& request, int sock);
+    virtual void distribute(HttpRequest& request, int sock);
+
+    void dispatch(HttpRequest& request, int sock);
 
     void executeRead(int host_id);
     void executeWrite();
