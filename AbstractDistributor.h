@@ -16,7 +16,7 @@ public:
     AbstractDistributor(std::vector<Host> *hosts) {
         cluster_nodes = hosts;
     };
-    int queryType(std::unique_ptr<Json::Value> query);
+    int queryType(char *http_payload);
     void dispatch(HttpRequest& request, int sock);
     virtual void sendToMaster(HttpRequest& request, int sock) = 0;
     virtual void sendToAll(HttpRequest& request, int sock) = 0;

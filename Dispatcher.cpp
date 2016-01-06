@@ -141,6 +141,7 @@ void Dispatcher::dispatch_requests(int id) {
                     //debug("complete message received\n header:  %s", http_body_start-buf);
 
                     content = http_body_start;
+                    debug("%s", content);
                     r.setContent(content);
                     break;
                 }
@@ -250,18 +251,18 @@ void Dispatcher::start() {
 
     socklen_t client_addrlen;
     struct sockaddr client_addr;
-    int client_socket;
+    int request_socket;
 
     // Disptach requests
     while(1) {
-        client_socket = accept(socket, &client_addr, &client_addrlen);
-        if (client_socket < 0) {
+        request_socket = accept(socket, &client_addr, &client_addrlen);
+        if (request_socket < 0) {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
         
         request_queue_mutex.lock();
-        request_queue.push(client_socket);
+        request_queue.push(request_socket);
         request_queue_mutex.unlock();
     }
 }
