@@ -17,7 +17,7 @@
 #include <memory>
 
 #include "http.h"
-#include "HttpResponse.h"
+
 
 class Host {
 public:
@@ -33,7 +33,7 @@ public:
     int getPort();
     void setPort(int port);
 
-    std::unique_ptr<HttpResponse> executeRequest(struct HttpRequest *request);
+    struct HttpResponse *executeRequest(struct HttpRequest *request);
 private:
     std::string url;
     int port;

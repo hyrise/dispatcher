@@ -21,11 +21,11 @@ struct HttpRequest {
     char *payload;
 };
 
-// struct HttpResponse {
-//     char *status;
-//     size_t content_length;
-//     char *payload;
-// };
+struct HttpResponse {
+    int status;
+    size_t content_length;
+    char *payload;
+};
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock);
 

@@ -12,7 +12,7 @@
 #include <queue>
 
 #include "AbstractDistributor.h"
-#include "HttpResponse.h"
+
 
 class RoundRobinDistributor: public AbstractDistributor {
 public:
@@ -40,7 +40,7 @@ private:
     };
     std::queue<struct RequestTuple*> m_parsedRequests;
 
-    void sendResponse(std::unique_ptr<HttpResponse> response, int sock);
+    void sendResponse(struct HttpResponse *response, int sock);
 };
 
 #endif

@@ -13,7 +13,7 @@ RoundRobinDistributor::RoundRobinDistributor(std::vector<Host> *hosts): Abstract
 RoundRobinDistributor::~RoundRobinDistributor() {};
 
 void RoundRobinDistributor::execute() {
-    std::unique_ptr<HttpResponse> response;
+    struct HttpResponse *response;
     Host *host;
 
     while (1) {
@@ -29,7 +29,7 @@ void RoundRobinDistributor::execute() {
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
         response = host->executeRequest(request_tuple->request);
 
-        sendResponse(std::move(response), request_tuple->socket);
+        sendResponse(response, request_tuple->socket);
     }
 }
 
@@ -60,7 +60,7 @@ void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
 void RoundRobinDistributor::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
     for (Host host : *cluster_nodes) {
-        std::unique_ptr<HttpResponse> response = host.executeRequest(request);
+        struct HttpResponse *response = host.executeRequest(request);
     }
     close(sock);
     // TODO send response
@@ -82,14 +82,14 @@ void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) 
 }
 
 
-void RoundRobinDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
+void RoundRobinDistributor::sendResponse(struct HttpResponse *response, int sock) {
     char *buf;
     int allocatedBytes;
     char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
     if (response) {
-    	allocatedBytes = asprintf(&buf, http_response, response->getContentLength(), response->getContent());
+        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
     } else {
-	    allocatedBytes = asprintf(&buf, http_response, 0, "");
+        allocatedBytes = asprintf(&buf, http_response, 0, "");
     }
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");

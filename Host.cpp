@@ -72,9 +72,9 @@ int Host::get_content_lenght(const char *buf, const int size) {
     return res;
 }
 
-std::unique_ptr<HttpResponse> Host::executeRequest(struct HttpRequest *request) {
+struct HttpResponse *Host::executeRequest(struct HttpRequest *request) {
     int sock = openConnection();
-    std::unique_ptr<HttpResponse> response(new HttpResponse);
+    struct HttpResponse *response = new HttpResponse;
 
     char http_post[] = "POST %s HTTP/1.1\r\n\
 Content-Length: %d\r\n\
@@ -116,7 +116,7 @@ Connection: Keep-Alive\r\n\r\n\
             // it can be parsed for http method and recource
             int n;
             if ((n = sscanf(buf, "HTTP/1.1 %d", &status)) == 1) {
-                response->setStatus(status);
+                response->status = status;
 		        debug("HTTP Response status: %i", status);
             } else {
                 log_err("ERROR----------------------- scanf %d", n);
@@ -143,7 +143,7 @@ Connection: Keep-Alive\r\n\r\n\
             header_received = 1;
             // header delimiter reached
             content_length = get_content_lenght(buf, offset);
-            response->setContentLength(content_length);
+            response->content_length = content_length;
             debug("Content-Length: %i", content_length);
         }
 
@@ -153,7 +153,7 @@ Connection: Keep-Alive\r\n\r\n\
             if (((http_body_start - buf) + content_length) == offset) {
                 //debug("complete message received\n header: %s", http_body_start-buf);
                 content = http_body_start;
-                response->setContent(content);
+                response->payload = content;
                 free(buf);
                 close(sock);
                 return response;
