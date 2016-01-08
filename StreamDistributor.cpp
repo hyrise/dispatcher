@@ -1,7 +1,8 @@
 #include "StreamDistributor.h"
 #include "dbg.h"
+#include <sys/socket.h>
 
-StreamDistributor::StreamDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
+StreamDistributor::StreamDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     int thread_count = 4;
     for (unsigned int j = 0; j < hosts->size(); j++)
         for (int i = 1; i <= thread_count; ++i) {
@@ -16,7 +17,7 @@ StreamDistributor::~StreamDistributor() {};
 
 void StreamDistributor::executeRead(int host_id) {
     struct HttpResponse *response;
-    Host* host;
+    struct Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_read_queue_mtx);
@@ -25,9 +26,9 @@ void StreamDistributor::executeRead(int host_id) {
         m_parsedReads.pop();
         lck.unlock();
 
-        host = &(cluster_nodes->at(host_id));
-        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request_tuple->request);
+        host = cluster_nodes->at(host_id);
+        debug("Request send to host %s:%d", host->url, host->port);
+        response = executeRequest(host, request_tuple->request);
 
         sendResponse(response, request_tuple->socket);
     }
@@ -35,7 +36,7 @@ void StreamDistributor::executeRead(int host_id) {
 
 void StreamDistributor::executeWrite() {
     struct HttpResponse *response;
-    Host* host;
+    struct Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_write_queue_mtx);
@@ -46,9 +47,9 @@ void StreamDistributor::executeWrite() {
         m_parsedWrites.pop();
         lck.unlock();
         
-        host = &(cluster_nodes->at(0));
-        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request_tuple->request);
+        host = cluster_nodes->at(0);
+        debug("Request send to host %s:%d", host->url, host->port);
+        response = executeRequest(host, request_tuple->request);
 
         sendResponse(response, request_tuple->socket);
     }
@@ -73,8 +74,8 @@ void StreamDistributor::distribute(struct HttpRequest *request, int sock) {
 
 void StreamDistributor::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
-    for (Host host : *cluster_nodes) {
-        struct HttpResponse *response = host.executeRequest(request);
+    for (struct Host *host : *cluster_nodes) {
+        struct HttpResponse *response = executeRequest(host, request);
     }
     close(sock);
     // TODO send response

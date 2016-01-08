@@ -8,6 +8,10 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
@@ -66,13 +70,16 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         throw "Settings file does not contain any host.";
     }
     
-    std::vector<Host> *hosts = new std::vector<Host>;
+    std::vector<struct Host*> *hosts = new std::vector<struct Host*>;
     for (auto host: jsonHosts) {
         std::string url = host.get("url", "").asString();
         int port = host.get("port", "0").asInt();
         if (url != "" and port != 0) {
             debug("Found host with address %s:%i", url.c_str(), port);
-            hosts->emplace_back(url, port);
+            struct Host *h = new struct Host;
+            h->port = port;
+            h->url = strdup(url.c_str());
+            hosts->push_back(h);
         }
     }
 

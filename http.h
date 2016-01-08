@@ -9,10 +9,11 @@
 #define FALSE 0
 
 
-// struct Host {
-//     char *url;
-//     int port;
-// };
+struct Host {
+    char *url;
+    int port;
+};
+
 
 struct HttpRequest {
     char *method;
@@ -28,5 +29,6 @@ struct HttpResponse {
 };
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock);
+struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
 
 #endif

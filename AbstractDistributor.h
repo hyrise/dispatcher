@@ -8,12 +8,11 @@
 #include <vector>
 
 #include "http.h"
-#include "Host.h"
 #include "jsoncpp/json.h"
 
 class AbstractDistributor {
 public:
-    AbstractDistributor(std::vector<Host> *hosts) {
+    AbstractDistributor(std::vector<struct Host*> *hosts) {
         cluster_nodes = hosts;
     };
     int queryType(char *http_payload);
@@ -23,7 +22,7 @@ public:
     virtual void distribute(struct HttpRequest *request, int sock) = 0;
     
 protected:
-    std::vector<Host> *cluster_nodes;
+    std::vector<struct Host*> *cluster_nodes;
 };
 
 #endif

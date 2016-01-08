@@ -16,7 +16,7 @@
 
 class RoundRobinDistributor: public AbstractDistributor {
 public:
-    RoundRobinDistributor(std::vector<Host> *hosts);
+    RoundRobinDistributor(std::vector<struct Host*> *hosts);
     ~RoundRobinDistributor();
 
     virtual void sendToMaster(struct HttpRequest *request, int sock);

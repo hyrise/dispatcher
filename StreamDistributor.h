@@ -16,7 +16,7 @@
 
 class StreamDistributor: public AbstractDistributor {
 public:
-    StreamDistributor(std::vector<Host> *hosts);
+    StreamDistributor(std::vector<struct Host*> *hosts);
     ~StreamDistributor();
 
     virtual void sendToMaster(struct HttpRequest *request, int sock);

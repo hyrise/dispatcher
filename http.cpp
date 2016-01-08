@@ -2,6 +2,9 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "dbg.h"
 
 
@@ -49,6 +52,29 @@ int get_content_lenght(const char *buf, const int size) {
             res = get_content_lenght1(buf, size, "content-length:");
     return res;
 }
+
+int openConnection(struct Host *host) {
+    int sock;
+    struct sockaddr_in dest;
+
+    if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
+        log_err("ERROR: could not create a socket.");
+    }
+
+    //---Initialize server address/port struct
+    bzero(&dest, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_addr.s_addr = inet_addr(host->url);
+    dest.sin_port = htons(host->port);
+
+    //---Connect to server
+    if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
+        log_err("ERROR: could not connect to host.");
+    }
+
+    return sock;
+}
+
 
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock) {
@@ -128,4 +154,99 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
 
     free(buf);
     return request;
+}
+
+
+struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
+    int sock = openConnection(host);
+    struct HttpResponse *response = new HttpResponse;
+
+    char http_post[] = "POST %s HTTP/1.1\r\n\
+Content-Length: %d\r\n\
+Connection: Keep-Alive\r\n\r\n\
+%s";
+
+    char *buf;
+    int allocatedBytes = asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request->content_length, request->payload);
+    if (allocatedBytes == -1) {
+       log_err("Error during creating request.");
+        return NULL;
+    }
+    send(sock, buf, strlen(buf), 0);
+    free(buf);
+
+    int offset = 0;
+    int recv_size = 0;
+    int first_line_received = 0;
+    int header_received = 0;
+    char *http_body_start = NULL;
+    int status = 0;
+    int content_length = 0;
+    char *content;
+
+    buf = new char[BUFFERSIZE];
+    memset( buf, 0, BUFFERSIZE );
+
+    while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
+    debug("received %i bytes\ncontent: %s", recv_size, buf );
+        offset += recv_size;
+        if (!first_line_received) {
+            char *hit_ptr;
+            hit_ptr = strnstr_(buf, "\n", offset, 1);
+            if (hit_ptr == NULL) {
+                continue;
+            }
+            first_line_received = 1;
+            // first line received
+            // it can be parsed for http method and recource
+            int n;
+            if ((n = sscanf(buf, "HTTP/1.1 %d", &status)) == 1) {
+                response->status = status;
+                debug("HTTP Response status: %i", status);
+            } else {
+                log_err("ERROR----------------------- scanf %d", n);
+                close(sock);
+                return NULL;
+            }
+            if (status != 200) {
+                close(sock);
+                log_err("Wrong Status");
+                return NULL;
+            }
+        }
+
+        // first line received and checked successfully
+        // check for content next
+        if (!header_received) {
+            char *hit_ptr;
+            hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
+            http_body_start = hit_ptr + 4;
+            if (hit_ptr == NULL) {
+                log_err("not FOUND");
+                continue;
+            }
+            header_received = 1;
+            // header delimiter reached
+            content_length = get_content_lenght(buf, offset);
+            response->content_length = content_length;
+            debug("Content-Length: %i", content_length);
+        }
+
+        // complete header was received
+        // check whether message is complete
+        if (http_body_start != NULL) {
+            if (((http_body_start - buf) + content_length) == offset) {
+                //debug("complete message received\n header: %s", http_body_start-buf);
+                content = http_body_start;
+                response->payload = content;
+                free(buf);
+                close(sock);
+                return response;
+            }
+        }
+        debug("Read...");
+    }
+    free(buf);
+    close(sock);
+    return NULL;
 }

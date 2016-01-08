@@ -1,8 +1,9 @@
 #include "RoundRobinDistributor.h"
 #include "dbg.h"
+#include <sys/socket.h>
 
 
-RoundRobinDistributor::RoundRobinDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
+RoundRobinDistributor::RoundRobinDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     read_counter.store(0);
     int thread_count = 10;
     for (int i = 1; i <= thread_count; ++i) {
@@ -14,7 +15,7 @@ RoundRobinDistributor::~RoundRobinDistributor() {};
 
 void RoundRobinDistributor::execute() {
     struct HttpResponse *response;
-    Host *host;
+    struct Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -25,9 +26,9 @@ void RoundRobinDistributor::execute() {
         m_parsedRequests.pop();
         lck.unlock();
         
-        host = &(cluster_nodes->at(request_tuple->host));
-        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request_tuple->request);
+        host = cluster_nodes->at(request_tuple->host);
+        debug("Request send to host %s:%d", host->url, host->port);
+        response = executeRequest(host, request_tuple->request);
 
         sendResponse(response, request_tuple->socket);
     }
@@ -59,8 +60,8 @@ void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
 
 void RoundRobinDistributor::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
-    for (Host host : *cluster_nodes) {
-        struct HttpResponse *response = host.executeRequest(request);
+    for (struct Host *host : *cluster_nodes) {
+        struct HttpResponse *response = executeRequest(host, request);
     }
     close(sock);
     // TODO send response
