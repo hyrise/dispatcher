@@ -21,11 +21,8 @@
 
 class Host {
 public:
-    Host(std::string url, int port, bool is_master = false);
+    Host(std::string url, int port);
     ~Host();
-
-    bool getMaster();
-    void setMaster(bool is_master);
 
     std::string getUrl();
     void setUrl(std::string url);
@@ -37,7 +34,6 @@ public:
 private:
     std::string url;
     int port;
-    bool is_master;
 
     int openConnection();
     char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle);

@@ -3,22 +3,13 @@
 
 #define BUFFERSIZE 65535
 
-Host::Host(std::string url, int port, bool is_master) {
+Host::Host(std::string url, int port) {
     this->url = url;
     this->port = port;
-    this->is_master = is_master;
 }
 
 
 Host::~Host() {
-}
-
-bool Host::getMaster() {
-    return is_master;
-}
-
-void Host::setMaster(bool is_master) {
-    this->is_master = is_master;
 }
 
 std::string Host::getUrl() {
