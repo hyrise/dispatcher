@@ -3,6 +3,7 @@
 #include "jsoncpp/json.h"
 #include "RoundRobinDistributor.h"
 #include "StreamDistributor.h"
+#include "http.h"
 
 #include <iostream>
 #include <fstream>
@@ -10,45 +11,6 @@
 
 #define MAXPENDING 5
 #define BUFFERSIZE 65535
-
-
-char *strnstr_(const char *haystack, const char *needle, size_t len_haystack, size_t len_needle) {
-    if (len_haystack == 0) return (char *)haystack; /* degenerate edge case */
-    if (len_needle == 0) return (char *)haystack; /* degenerate edge case */
-    while ((haystack = strchr(haystack, needle[0]))) {
-        if (!strncmp(haystack, needle, len_needle)) return (char *)haystack;
-        haystack++; }
-    return NULL;
-}
-
-
-int get_content_lenght1(const char *buf, const int size, const char *lengthname) {
-    const char *hit_ptr;
-    int content_length;
-    hit_ptr = strnstr_(buf, lengthname, size, 15);
-    if (hit_ptr == NULL) {
-        return -1;
-    }
-    char format [50];
-    strcpy(format,lengthname);
-    strcat(format," %d");
-    fflush(stdout);
-    if (sscanf(hit_ptr, format, &content_length) != 1) {
-        return -1;
-    }
-    return content_length;
-}
-
-
-int get_content_lenght(const char *buf, const int size) {
-    // TODO refactor
-    int res = get_content_lenght1(buf, size, "Content-Length:");
-    if (res == -1)
-        res = get_content_lenght1(buf, size, "Content-length:");
-        if (res == -1)
-            res = get_content_lenght1(buf, size, "content-length:");
-    return res;
-}
 
 
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
@@ -73,81 +35,10 @@ void Dispatcher::dispatch_requests(int id) {
         request_queue.pop();
         request_queue_mutex.unlock();
 
-
-        HttpRequest r = HttpRequest();
-
-        char *buf = new char[BUFFERSIZE];
-        memset(buf, 0, BUFFERSIZE);
-        int offset = 0;
-        int recv_size = 0;
-        int first_line_received = 0;
-        int header_received = 0;
-        char *http_body_start = NULL;
-        char method[16], recource[32];
-        char *content = NULL;
-        int length = 0;
-
         debug("New request: Handled by thread %i", id);
+        struct HttpRequest *request = HttpRequestFromEndpoint(sock);
 
-        while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
-            debug("Received %i bytes.", recv_size);
-            offset += recv_size;
-
-            if (!first_line_received) {
-                char *hit_ptr;
-                hit_ptr = strnstr_(buf, "\n", offset, 1);
-                if (hit_ptr == NULL) {
-                    continue;
-                }
-                first_line_received = 1;
-                // first line received
-                // it can be parsed for http method and recource
-                int n;
-                if ((n = sscanf(buf, "%15s %31s HTTP/1.1", (char *)&method, (char *)&recource)) == 2) {
-                    r.setMethod(method);
-                    r.setResource(recource);
-                    debug("HTTP Request: Method %s Recource: %s", method, recource);
-                } else {
-                    log_err("ERROR scanf %d", n);
-                    break;
-                }
-            }
-
-            if (!header_received) {
-                char *hit_ptr;
-                hit_ptr = strnstr_(buf, "\r\n\r\n", offset, 4);
-                http_body_start = hit_ptr + 4;
-                if (hit_ptr == NULL) {
-                    log_err("ERROR: not FOUND");
-                    continue;
-                }
-                header_received = 1;
-                // header delimiter reached
-                length = get_content_lenght(buf, offset);
-                r.setContentLength(length);
-                if (length == -1)
-                {
-                    log_err("ERROR: Could not read content length!");
-                    break;
-                } else {
-                    debug("Header Received #### Content-Length: %i", length);
-                }
-            }
-
-            // complete header was received
-            // check whether message is complete
-            if (http_body_start != NULL) {
-                if (((http_body_start - buf) + length) == offset) {
-                    //debug("complete message received\n header:  %s", http_body_start-buf);
-
-                    content = http_body_start;
-                    debug("%s", content);
-                    r.setContent(content);
-                    break;
-                }
-            }
-        }
-        distributor->dispatch(r, sock);
+        distributor->dispatch(request, sock);
     }
 }
 

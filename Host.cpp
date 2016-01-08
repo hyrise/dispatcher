@@ -72,7 +72,7 @@ int Host::get_content_lenght(const char *buf, const int size) {
     return res;
 }
 
-std::unique_ptr<HttpResponse> Host::executeRequest(HttpRequest& request) {
+std::unique_ptr<HttpResponse> Host::executeRequest(struct HttpRequest *request) {
     int sock = openConnection();
     std::unique_ptr<HttpResponse> response(new HttpResponse);
 
@@ -82,9 +82,9 @@ Connection: Keep-Alive\r\n\r\n\
 %s";
 
     char *buf;
-    int allocatedBytes = asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request.getContentLength(), request.getContent());
+    int allocatedBytes = asprintf(&buf, http_post, "/query/" /*request.getResource().c_str()*/, request->content_length, request->payload);
     if (allocatedBytes == -1) {
-	log_err("Error during creating request.");
+	   log_err("Error during creating request.");
         return NULL;
     }
     send(sock, buf, strlen(buf), 0);

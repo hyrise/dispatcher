@@ -21,15 +21,15 @@ void StreamDistributor::executeRead(int host_id) {
     while (1) {
         std::unique_lock<std::mutex> lck(m_read_queue_mtx);
         while (m_parsedReads.empty()) m_read_queue_cv.wait(lck);
-        m_requestTuple_t request = m_parsedReads.front();
+        struct RequestTuple *request_tuple = m_parsedReads.front();
         m_parsedReads.pop();
         lck.unlock();
 
         host = &(cluster_nodes->at(host_id));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request.request);
+        response = host->executeRequest(request_tuple->request);
 
-        sendResponse(std::move(response), request.socket);
+        sendResponse(std::move(response), request_tuple->socket);
     }
 }
 
@@ -42,30 +42,36 @@ void StreamDistributor::executeWrite() {
         //std::cout << "waiting" << std::endl;
         while (m_parsedWrites.empty()) m_write_queue_cv.wait(lck);
         //std::cout << "notified" << std::endl;
-        m_requestTuple_t request = m_parsedWrites.front();
+        struct RequestTuple *request_tuple = m_parsedWrites.front();
         m_parsedWrites.pop();
         lck.unlock();
         
         host = &(cluster_nodes->at(0));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request.request);
+        response = host->executeRequest(request_tuple->request);
 
-        sendResponse(std::move(response), request.socket);
+        sendResponse(std::move(response), request_tuple->socket);
     }
 }
 
 
-void StreamDistributor::distribute(HttpRequest& request, int sock) {
+void StreamDistributor::distribute(struct HttpRequest *request, int sock) {
     std::unique_ptr<HttpResponse> response;
     std::unique_lock<std::mutex> lck;
 
     lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
-    m_parsedReads.emplace(request, 0, sock);
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple->socket = sock;
+
+    m_parsedReads.push(request_tuple);
     m_read_queue_cv.notify_one();
 }
 
 
-void StreamDistributor::sendToAll(HttpRequest& request, int sock) {
+void StreamDistributor::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
     for (Host host : *cluster_nodes) {
         std::unique_ptr<HttpResponse> response = host.executeRequest(request);
@@ -75,11 +81,17 @@ void StreamDistributor::sendToAll(HttpRequest& request, int sock) {
 }
 
 
-void StreamDistributor::sendToMaster(HttpRequest& request, int sock) {
+void StreamDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     debug("Dispatch procedure.");
 
     std::unique_lock<std::mutex> lck(m_write_queue_mtx);
-    m_parsedWrites.emplace(request, 0, sock);
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple-> socket = sock;
+
+    m_parsedWrites.push(request_tuple);
     m_write_queue_cv.notify_one();
 }
 

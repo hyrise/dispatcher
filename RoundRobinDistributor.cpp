@@ -21,20 +21,20 @@ void RoundRobinDistributor::execute() {
         //std::cout << "waiting" << std::endl;
         while (m_parsedRequests.empty()) m_queue_cv.wait(lck);
         //std::cout << "notified" << std::endl;
-        m_requestTuple_t request = m_parsedRequests.front();
+        RequestTuple *request_tuple = m_parsedRequests.front();
         m_parsedRequests.pop();
         lck.unlock();
         
-        host = &(cluster_nodes->at(request.host));
+        host = &(cluster_nodes->at(request_tuple->host));
         debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request.request);
+        response = host->executeRequest(request_tuple->request);
 
-        sendResponse(std::move(response), request.socket);
+        sendResponse(std::move(response), request_tuple->socket);
     }
 }
 
 
-void RoundRobinDistributor::distribute(HttpRequest& request, int sock) {
+void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
     unsigned int host_id, counter;
     std::unique_lock<std::mutex> lck(m_queue_mtx);
 
@@ -42,16 +42,22 @@ void RoundRobinDistributor::distribute(HttpRequest& request, int sock) {
 
     counter = read_counter.fetch_add(1);
     //avoid numeric overflow, reset read count after half of unsigned int range queries
-    if (counter == m_boundary)
+    if (counter == m_boundary) {
         read_counter.fetch_sub(m_boundary);
+    }
     host_id = counter % cluster_nodes->size();
 
-    m_parsedRequests.emplace(request, host_id, sock);
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = host_id;
+    request_tuple->socket = sock;
+
+    m_parsedRequests.push(request_tuple);
     m_queue_cv.notify_one();
 }
 
 
-void RoundRobinDistributor::sendToAll(HttpRequest& request, int sock) {
+void RoundRobinDistributor::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
     for (Host host : *cluster_nodes) {
         std::unique_ptr<HttpResponse> response = host.executeRequest(request);
@@ -62,11 +68,16 @@ void RoundRobinDistributor::sendToAll(HttpRequest& request, int sock) {
 
 
 
-void RoundRobinDistributor::sendToMaster(HttpRequest& request, int sock) {
+void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     debug("Send request to master.");
-
     std::unique_lock<std::mutex> lck(m_queue_mtx);
-    m_parsedRequests.emplace(request, 0, sock);
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple->socket = sock;
+
+    m_parsedRequests.push(request_tuple);
     m_queue_cv.notify_one();
 }
 

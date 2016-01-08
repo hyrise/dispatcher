@@ -72,12 +72,11 @@ int AbstractDistributor::queryType(char *http_payload) {
 }
 
 
-void AbstractDistributor::dispatch(HttpRequest& request, int sock) {
+void AbstractDistributor::dispatch(struct HttpRequest *request, int sock) {
     debug("Distribute.");
-
     
-    if (request.getResource() == "/query") {
-        int query_t = queryType(request.getContent());
+    if (strcmp(request->resource, "/query") == 0) {
+        int query_t = queryType(request->payload);
         switch(query_t) {
             case READ:
                 distribute(request, sock);
@@ -89,13 +88,13 @@ void AbstractDistributor::dispatch(HttpRequest& request, int sock) {
                 sendToMaster(request, sock);
                 return;
             default:
-                log_err("Invalid query: %s", request.getContent());
+                log_err("Invalid query: %s", request->payload);
                 throw "Invalid query.";
         }
-    } else if (request.getResource() == "/procedure") {
+    } else if (strcmp(request->resource, "/procedure") == 0) {
         sendToMaster(request, sock);
         return;
     }
-    log_err("Invalid HTTP recource: %s", request.getResource().c_str());
+    log_err("Invalid HTTP recource: %s", request->resource);
     throw "Invalid recource.";
 }

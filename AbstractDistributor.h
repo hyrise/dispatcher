@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "HttpRequest.h"
+#include "http.h"
 #include "Host.h"
 #include "jsoncpp/json.h"
 
@@ -17,10 +17,10 @@ public:
         cluster_nodes = hosts;
     };
     int queryType(char *http_payload);
-    void dispatch(HttpRequest& request, int sock);
-    virtual void sendToMaster(HttpRequest& request, int sock) = 0;
-    virtual void sendToAll(HttpRequest& request, int sock) = 0;
-    virtual void distribute(HttpRequest& request, int sock) = 0;
+    void dispatch(struct HttpRequest *request, int sock);
+    virtual void sendToMaster(struct HttpRequest *request, int sock) = 0;
+    virtual void sendToAll(struct HttpRequest *request, int sock) = 0;
+    virtual void distribute(struct HttpRequest *request, int sock) = 0;
     
 protected:
     std::vector<Host> *cluster_nodes;
