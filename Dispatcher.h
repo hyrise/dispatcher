@@ -5,6 +5,7 @@
 #include "AbstractDistributor.h"
 
 #include <mutex>
+#include <condition_variable>
 #include <queue>
 #include <thread>
 #include <vector>
@@ -14,6 +15,8 @@ class Dispatcher {
 private:
     std::queue<int> request_queue;
     std::mutex request_queue_mutex;
+    std::condition_variable request_queue_empty;
+
 
     char *port;
 

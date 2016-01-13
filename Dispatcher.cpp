@@ -14,7 +14,6 @@
 #include <netdb.h>
 
 #define MAXPENDING 5
-#define BUFFERSIZE 65535
 
 
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
@@ -23,21 +22,18 @@ void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
 
 
 void Dispatcher::dispatch_requests(int id) {
-    Json::Reader m_reader = Json::Reader();
-
     debug("Thread %i started", id);
 
     while (1) {
         // Get an request out of the request queue
-        while (1) {
-            // TODO: Condition variables
-            request_queue_mutex.lock();
-            if (!request_queue.empty()) break;
-            request_queue_mutex.unlock();
-        }
+        std::unique_lock<std::mutex> lck(request_queue_mutex);
+        while (request_queue.empty()) {
+            debug("Wait %d", id);
+            request_queue_empty.wait(lck);
+        };
         int sock = request_queue.front();
         request_queue.pop();
-        request_queue_mutex.unlock();
+        lck.unlock();
 
         debug("New request: Handled by thread %i", id);
         struct HttpRequest *request = HttpRequestFromEndpoint(sock);
@@ -159,8 +155,9 @@ void Dispatcher::start() {
             throw "Error: on accept.";
         }
         
-        request_queue_mutex.lock();
+        std::unique_lock<std::mutex> lck(request_queue_mutex);
         request_queue.push(request_socket);
+        request_queue_empty.notify_one();
         request_queue_mutex.unlock();
     }
 }
