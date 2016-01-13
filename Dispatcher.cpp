@@ -16,8 +16,82 @@
 #define MAXPENDING 5
 
 
+void Request_free(struct Request *request) {
+    free(request);
+}
+
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
     dispatcher->dispatch_requests(id);
+}
+
+
+std::string urlDecode(std::string &SRC) {
+    std::string ret;
+    char ch;
+    unsigned int i, ii;
+    for (i=0; i<SRC.length(); i++) {
+        if (int(SRC[i])==37) {
+            sscanf(SRC.substr(i+1,2).c_str(), "%x", &ii);
+            ch=static_cast<char>(ii);
+            ret+=ch;
+            i=i+2;
+        } else {
+            ret+=SRC[i];
+        }
+    }
+    return (ret);
+}
+
+
+int queryType(char *http_payload) {
+    if (http_payload == NULL) {
+        return -1;
+    }
+    std::string http_payload_str(http_payload);
+    Json::Reader reader = Json::Reader();
+    size_t pLastKey, pValue, pNextKey;
+    std::map<std::string, std::string> content;
+
+    pLastKey = 0;
+    while (true) {
+        pValue = http_payload_str.find('=', pLastKey);
+        pNextKey = http_payload_str.find('&', pValue);
+        std::string key = http_payload_str.substr(pLastKey, pValue - pLastKey);
+        std::string value = http_payload_str.substr(pValue + 1, pNextKey == std::string::npos ? pNextKey : pNextKey - pValue -1);
+        content.emplace(key, urlDecode(value));
+        if (pNextKey == std::string::npos) break;
+        pLastKey = pNextKey + 1;
+    }
+    std::string &query_str = content.at("query");
+
+    std::unique_ptr<Json::Value> root (new Json::Value);
+    if (reader.parse(query_str, (*root)) == false) {
+        // Error TODO: Error Response
+        log_err("Error parsing json: %s", reader.getFormattedErrorMessages().c_str());
+        debug("%s", http_payload);
+        return -1;
+    }
+    std::unique_ptr<Json::Value> query = std::move(root);
+
+
+    Json::Value operators;
+    Json::Value obj_value(Json::objectValue);
+
+    if (!query->isObject() || query->isMember("operators") == false) {
+        log_err("query content does not contain any operators");
+        throw "query content does not contain any operators";
+    }
+    operators = query->get("operators", obj_value);
+
+    for (auto op: operators) {
+        auto type = op.get("type", "").asString();
+        if (type == "InsertScan" or
+            type == "Delete" or
+            type == "PosUpdateIncrementScan" or
+            type == "PosUpdateScan") return WRITE;
+        if (type == "TableLoad") return LOAD;
+    }
+    return READ;
 }
 
 
@@ -31,14 +105,48 @@ void Dispatcher::dispatch_requests(int id) {
             debug("Wait %d", id);
             request_queue_empty.wait(lck);
         };
-        int sock = request_queue.front();
+        struct Request *tcp_request = request_queue.front();
         request_queue.pop();
         lck.unlock();
 
         debug("New request: Handled by thread %i", id);
-        struct HttpRequest *request = HttpRequestFromEndpoint(sock);
 
-        distributor->dispatch(request, sock);
+        // Allocates memory for the request
+        struct HttpRequest *request = HttpRequestFromEndpoint(tcp_request->socket);
+
+        if (strcmp(request->resource, "/add_node") == 0) {
+            if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
+                struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
+                //TODO: not thread safe - look at inet_ntop()
+                char *ip = inet_ntoa(addr->sin_addr);
+                debug("add_host IP %s", ip);
+            } else {
+                debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
+            }
+            //add_node()
+        } else if (strcmp(request->resource, "/query") == 0) {
+            int query_t = queryType(request->payload);
+            switch(query_t) {
+                case READ:
+                    distributor->distribute(request, tcp_request->socket);
+                    break;
+                case LOAD:
+                    distributor->sendToAll(request, tcp_request->socket);
+                    break;
+                case WRITE:
+                    distributor->sendToMaster(request, tcp_request->socket);
+                    break;
+                default:
+                    log_err("Invalid query: %s", request->payload);
+                    throw "Invalid query.";
+            }
+        } else if (strcmp(request->resource, "/procedure") == 0) {
+            distributor->sendToMaster(request, tcp_request->socket);
+        } else {
+        log_err("Invalid HTTP resource: %s", request->resource);
+        throw "Invalid recource.";
+        Request_free(tcp_request);
+        }
     }
 }
 
@@ -143,20 +251,18 @@ void Dispatcher::start() {
     int socket = create_socket();
     debug("Dispatcher: Listening on port %s", port);
 
-    socklen_t client_addrlen;
-    struct sockaddr client_addr;
-    int request_socket;
-
     // Disptach requests
     while(1) {
-        request_socket = accept(socket, &client_addr, &client_addrlen);
-        if (request_socket < 0) {
+        // Allocates memory for request
+        struct Request *request = new struct Request();
+        request->socket = accept(socket, &(request->addr), &(request->addrlen));
+        if (request->socket < 0) {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
         
         std::unique_lock<std::mutex> lck(request_queue_mutex);
-        request_queue.push(request_socket);
+        request_queue.push(request);
         request_queue_empty.notify_one();
         request_queue_mutex.unlock();
     }

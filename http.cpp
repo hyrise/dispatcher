@@ -121,7 +121,9 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
             
             content_length = get_content_lenght(buf, buf_offset);
             if (content_length == -1) {
-                log_err("ERROR: Could not read content length!");
+
+                debug("Did not find content length, assume empty body! Message: %s", buf);
+                content_length = 0;
                 break;
             } else {
                 debug("Header Received #### Content-Length: %i", content_length);
@@ -150,8 +152,11 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     request->method = strdup(method);
     request->resource = strdup(resource);
     request->content_length = content_length;
-    request->payload = strdup(http_body_start);
-
+    if (content_length == 0) {
+        request->payload = NULL;
+    } else {
+        request->payload = strdup(http_body_start);
+    }
     free(buf);
     return request;
 }
