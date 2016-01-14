@@ -119,7 +119,9 @@ void Dispatcher::dispatch_requests(int id) {
                 struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
                 //TODO: not thread safe - look at inet_ntop()
                 char *ip = inet_ntoa(addr->sin_addr);
-                debug("add_host IP %s", ip);
+                int port = addr->sin_port;
+                add_host(ip, port);
+                debug("add_host IP %s %d", ip, port);
             } else {
                 debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
@@ -274,4 +276,13 @@ void Dispatcher::shut_down() {
     for (auto& th : parser_thread_pool) {
         th.join();
     }
+}
+
+
+void Dispatcher::add_host(char *url, int port) {
+    struct Host *h = new struct Host;
+    h->port = port;
+    h->url = strdup(url);
+    distributor->cluster_nodes->push_back(h);
+    debug("Adds host: %zu", distributor->cluster_nodes->size());
 }

@@ -11,6 +11,7 @@
 #include "jsoncpp/json.h"
 
 class AbstractDistributor {
+	friend class Dispatcher;
 public:
     AbstractDistributor(std::vector<struct Host*> *hosts) {
         cluster_nodes = hosts;

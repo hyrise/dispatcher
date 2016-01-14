@@ -43,6 +43,7 @@ public:
     int create_socket();
     void start();
     void shut_down();
+    void add_host(char *url, int port);
 };
 
 #endif  // DISPATCHER_H_
