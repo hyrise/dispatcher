@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <errno.h>
-
+#include <cstring>
 
 #define clean_errno() (errno == 0 ? "None" : strerror(errno))
 

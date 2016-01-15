@@ -89,7 +89,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     int content_length = 0;
 
 
-    size_t read_bytes = 0;
+    ssize_t read_bytes = 0;
     while ((read_bytes = read(sock, buf+buf_offset, BUFFERSIZE-buf_offset)) > 0) {
         buf_offset += read_bytes;
 

@@ -1,6 +1,7 @@
 #include "StreamDistributor.h"
 #include "dbg.h"
 #include <sys/socket.h>
+#include <unistd.h>
 
 StreamDistributor::StreamDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     int thread_count = 4;

@@ -6,7 +6,7 @@ INCLUDEPATHS = ./jsoncpp
 all: start_dispatcher
 
 start_dispatcher : $(OBJS) main.cpp
-	$(CXX) -std=c++11 -lpthread main.cpp $(OBJS) -o start_dispatcher
+	$(CXX) main.cpp -lpthread -std=c++11 $(OBJS) -o start_dispatcher
 
 
 Dispatcher.o : Dispatcher.cpp

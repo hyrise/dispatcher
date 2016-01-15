@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #define MAXPENDING 5
 
@@ -114,14 +115,14 @@ void Dispatcher::dispatch_requests(int id) {
         // Allocates memory for the request
         struct HttpRequest *request = HttpRequestFromEndpoint(tcp_request->socket);
 
-        if (strcmp(request->resource, "/add_node") == 0) {
+        if (strncmp(request->resource, "/add_node/", 10) == 0) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
                 struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
                 //TODO: not thread safe - look at inet_ntop()
                 char *ip = inet_ntoa(addr->sin_addr);
-                int port = addr->sin_port;
+                int port = (int)strtol(request->resource+10, (char **)NULL, 10);
+                debug("Add host:  %s:%i", ip, port);
                 add_host(ip, port);
-                debug("add_host IP %s %d", ip, port);
             } else {
                 debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
@@ -171,11 +172,6 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     }
 
     Json::Value jsonHosts = v.get("hosts", "");
-    if (jsonHosts == "" || jsonHosts.isArray() == false || jsonHosts.size() == 0) {
-        log_err("Settings file does not contain any host.");
-        throw "Settings file does not contain any host.";
-    }
-    
     std::vector<struct Host*> *hosts = new std::vector<struct Host*>;
     for (auto host: jsonHosts) {
         std::string url = host.get("url", "").asString();
@@ -190,8 +186,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     }
 
     if (hosts->size() == 0) {
-        log_err("Settings file does not contain any valid hosts.");
-        throw "Settings file does not contain any valid hosts.";
+        debug("Settings file does not contain any valid hosts.");
     }
 
     thread_pool_size = v.get("threads", 7).asInt();

@@ -1,7 +1,7 @@
 #include "RoundRobinDistributor.h"
 #include "dbg.h"
 #include <sys/socket.h>
-
+#include <unistd.h>
 
 RoundRobinDistributor::RoundRobinDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     read_counter.store(0);
