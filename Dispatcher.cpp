@@ -67,9 +67,8 @@ int queryType(char *http_payload) {
 
     std::unique_ptr<Json::Value> root (new Json::Value);
     if (reader.parse(query_str, (*root)) == false) {
-        // Error TODO: Error Response
         log_err("Error parsing json: %s", reader.getFormattedErrorMessages().c_str());
-        debug("%s", http_payload);
+        debug("HTTP payload was %s", http_payload);
         return -1;
     }
     std::unique_ptr<Json::Value> query = std::move(root);
@@ -89,8 +88,12 @@ int queryType(char *http_payload) {
         if (type == "InsertScan" or
             type == "Delete" or
             type == "PosUpdateIncrementScan" or
-            type == "PosUpdateScan") return WRITE;
-        if (type == "TableLoad") return LOAD;
+            type == "PosUpdateScan") {
+                return WRITE;
+        }
+        if (type == "TableLoad") {
+            return LOAD;
+        }
     }
     return READ;
 }
@@ -118,15 +121,19 @@ void Dispatcher::dispatch_requests(int id) {
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
                 struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
-                //TODO: not thread safe - look at inet_ntop()
-                char *ip = inet_ntoa(addr->sin_addr);
+                char ip[INET_ADDRSTRLEN];
+                if (inet_ntop(AF_INET, &(addr), ip, INET_ADDRSTRLEN) == NULL) {
+                    log_err("/add_node/ - Converting network address to string");
+                }
                 int port = (int)strtol(request->resource+10, (char **)NULL, 10);
+                if (port == 0) {
+                    log_err("/add_node/ - Detecting port");
+                }
                 debug("Add host:  %s:%i", ip, port);
                 add_host(ip, port);
             } else {
                 debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
-            //add_node()
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = queryType(request->payload);
             switch(query_t) {
@@ -146,10 +153,10 @@ void Dispatcher::dispatch_requests(int id) {
         } else if (strcmp(request->resource, "/procedure") == 0) {
             distributor->sendToMaster(request, tcp_request->socket);
         } else {
-        log_err("Invalid HTTP resource: %s", request->resource);
-        throw "Invalid recource.";
-        Request_free(tcp_request);
+            log_err("Invalid HTTP resource: %s", request->resource);
         }
+        // cleanup
+        Request_free(tcp_request);
     }
 }
 
@@ -232,7 +239,7 @@ int Dispatcher::create_socket() {
         log_err("Error: can't listen to socket.");
         throw "Error: can't listen to socket.";
     }
-
+    freeaddrinfo(res);
     return sock_fd;
 }
 

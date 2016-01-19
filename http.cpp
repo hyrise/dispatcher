@@ -59,6 +59,7 @@ int openConnection(struct Host *host) {
 
     if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
         log_err("ERROR: could not create a socket.");
+        return -1;
     }
 
     //---Initialize server address/port struct
@@ -70,6 +71,7 @@ int openConnection(struct Host *host) {
     //---Connect to server
     if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
         log_err("ERROR: could not connect to host.");
+        return -1;
     }
 
     return sock;
@@ -164,6 +166,10 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
 
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
     int sock = openConnection(host);
+    if (sock == -1) {
+        return NULL;
+    }
+
     struct HttpResponse *response = new HttpResponse;
 
     char http_post[] = "POST %s HTTP/1.1\r\n\
@@ -254,4 +260,11 @@ Connection: Keep-Alive\r\n\r\n\
     free(buf);
     close(sock);
     return NULL;
+}
+
+void HttpRequest_free(struct HttpRequest *request) {
+    free(request->method);
+    free(request->resource);
+    free(request->payload);
+    free(request);
 }

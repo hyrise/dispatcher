@@ -30,5 +30,6 @@ struct HttpResponse {
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
+void HttpRequest_free(struct HttpRequest *request);
 
 #endif
