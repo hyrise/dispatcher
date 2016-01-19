@@ -122,7 +122,7 @@ void Dispatcher::dispatch_requests(int id) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
                 struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
                 char ip[INET_ADDRSTRLEN];
-                if (inet_ntop(AF_INET, &(addr), ip, INET_ADDRSTRLEN) == NULL) {
+                if (inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN) == NULL) {
                     log_err("/add_node/ - Converting network address to string");
                 }
                 int port = (int)strtol(request->resource+10, (char **)NULL, 10);
