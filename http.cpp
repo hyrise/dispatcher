@@ -88,7 +88,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     char *http_body_start = NULL;
 
     char method[16], resource[32];
-    int content_length = 0;
+    size_t content_length = 0;
 
 
     ssize_t read_bytes = 0;
@@ -128,7 +128,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
                 content_length = 0;
                 break;
             } else {
-                debug("Header Received #### Content-Length: %i", content_length);
+                debug("Header Received #### Content-Length: %zu", content_length);
             }
         }
         // complete header was received
@@ -153,7 +153,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     struct HttpRequest *request = new struct HttpRequest;
     request->method = strdup(method);
     request->resource = strdup(resource);
-    request->content_length = content_length;
+    request->content_length = (int)content_length;
     if (content_length == 0) {
         request->payload = NULL;
     } else {

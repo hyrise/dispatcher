@@ -20,7 +20,6 @@ public:
     ~RoundRobinDistributor();
 
     virtual void sendToMaster(struct HttpRequest *request, int sock);
-    virtual void sendToAll(struct HttpRequest *request, int sock);
     virtual void distribute(struct HttpRequest *request, int sock);
 
     void execute();

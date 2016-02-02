@@ -58,17 +58,6 @@ void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
 }
 
 
-void RoundRobinDistributor::sendToAll(struct HttpRequest *request, int sock) {
-    debug("Load table.");
-    for (struct Host *host : *cluster_nodes) {
-        struct HttpResponse *response = executeRequest(host, request);
-    }
-    close(sock);
-    // TODO send response
-}
-
-
-
 void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     debug("Send request to master.");
     std::unique_lock<std::mutex> lck(m_queue_mtx);

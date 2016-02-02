@@ -141,7 +141,7 @@ void Dispatcher::dispatch_requests(int id) {
                     distributor->distribute(request, tcp_request->socket);
                     break;
                 case LOAD:
-                    distributor->sendToAll(request, tcp_request->socket);
+                    sendToAll(request, tcp_request->socket);
                     break;
                 case WRITE:
                     distributor->sendToMaster(request, tcp_request->socket);
@@ -158,6 +158,15 @@ void Dispatcher::dispatch_requests(int id) {
         // cleanup
         Request_free(tcp_request);
     }
+}
+
+void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
+    debug("Load table.");
+    for (struct Host *host : *distributor->cluster_nodes) {
+        struct HttpResponse *response = executeRequest(host, request);
+    }
+    close(sock);
+    // TODO send response
 }
 
 

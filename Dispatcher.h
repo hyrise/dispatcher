@@ -36,6 +36,8 @@ private:
 
     Dispatcher( const Dispatcher& other ); // non construction-copyable
     Dispatcher& operator=( const Dispatcher& ); // non copyable
+
+    void sendToAll(struct HttpRequest *request, int sock);
     
 public:
     Dispatcher(char *port, char *settings_file);

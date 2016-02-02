@@ -73,16 +73,6 @@ void StreamDistributor::distribute(struct HttpRequest *request, int sock) {
 }
 
 
-void StreamDistributor::sendToAll(struct HttpRequest *request, int sock) {
-    debug("Load table.");
-    for (struct Host *host : *cluster_nodes) {
-        struct HttpResponse *response = executeRequest(host, request);
-    }
-    close(sock);
-    // TODO send response
-}
-
-
 void StreamDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     debug("Dispatch procedure.");
 
