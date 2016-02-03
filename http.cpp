@@ -262,6 +262,29 @@ Connection: Keep-Alive\r\n\r\n\
     return NULL;
 }
 
+
+void sendResponse(struct HttpResponse *response, int sock) {
+    char *buf;
+    int allocatedBytes;
+    const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
+    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
+    if (response) {
+        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
+    } else {
+        allocatedBytes = asprintf(&buf, http_response, 0, "");
+    }
+    if (allocatedBytes == -1) {
+        log_err("An error occurred while creating response.");
+        send(sock, error_response, strlen(error_response), 0);
+        close(sock);
+        return;
+    }
+    send(sock, buf, strlen(buf), 0);
+    free(buf);
+    close(sock);
+    debug("Closed socket");
+}
+
 void HttpRequest_free(struct HttpRequest *request) {
     free(request->method);
     free(request->resource);

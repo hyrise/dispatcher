@@ -87,24 +87,3 @@ void StreamDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     m_write_queue_cv.notify_one();
 }
 
-
-void StreamDistributor::sendResponse(struct HttpResponse *response, int sock) {
-    char *buf;
-    int allocatedBytes;
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
-    } else {
-        allocatedBytes = asprintf(&buf, http_response, 0, "");
-    }
-    if (allocatedBytes == -1) {
-        log_err("An error occurred while creating response.");
-        send(sock, error_response, strlen(error_response), 0);
-        close(sock);
-        return;
-    }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-    debug("Closed socket");
-}

@@ -2,6 +2,14 @@
 #include "dbg.h"
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/time.h>
+
+
+
+unsigned timediff(struct timeval start,  struct timeval stop) {
+    return (stop.tv_usec - start.tv_usec) + (stop.tv_sec - start.tv_sec) * 1000 * 1000;
+}
+
 
 RoundRobinDistributor::RoundRobinDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     read_counter.store(0);
@@ -16,6 +24,7 @@ RoundRobinDistributor::~RoundRobinDistributor() {};
 void RoundRobinDistributor::execute() {
     struct HttpResponse *response;
     struct Host *host;
+    struct timeval query_start, query_end;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_queue_mtx);
@@ -28,7 +37,12 @@ void RoundRobinDistributor::execute() {
         
         host = cluster_nodes->at(request_tuple->host);
         debug("Request send to host %s:%d", host->url, host->port);
+
+        gettimeofday(&query_start, NULL);
         response = executeRequest(host, request_tuple->request);
+        gettimeofday(&query_end, NULL);
+        (host->total_queries)++;
+        host->total_time += (unsigned int)timediff(query_start, query_end);
 
         sendResponse(response, request_tuple->socket);
     }
@@ -71,24 +85,3 @@ void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) 
     m_queue_cv.notify_one();
 }
 
-
-void RoundRobinDistributor::sendResponse(struct HttpResponse *response, int sock) {
-    char *buf;
-    int allocatedBytes;
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
-    } else {
-        allocatedBytes = asprintf(&buf, http_response, 0, "");
-    }
-    if (allocatedBytes == -1) {
-        log_err("An error occurred while creating response.");
-        send(sock, error_response, strlen(error_response), 0);
-        close(sock);
-        return;
-    }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-    debug("Closed socket");
-}

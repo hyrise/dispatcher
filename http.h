@@ -12,6 +12,8 @@
 struct Host {
     char *url;
     int port;
+    unsigned int total_queries;
+    unsigned int total_time;
 };
 
 
@@ -30,6 +32,7 @@ struct HttpResponse {
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
+void sendResponse(struct HttpResponse *response, int sock);
 void HttpRequest_free(struct HttpRequest *request);
 
 #endif

@@ -26,11 +26,13 @@ private:
     std::mutex request_queue_mutex;
     std::condition_variable request_queue_empty;
 
-
     char *port;
 
     int thread_pool_size;
     std::vector<std::thread> parser_thread_pool;
+
+    std::vector<struct Host*> *cluster_nodes;
+    std::mutex cluster_nodes_mutex;
 
     AbstractDistributor *distributor;
 
@@ -38,6 +40,7 @@ private:
     Dispatcher& operator=( const Dispatcher& ); // non copyable
 
     void sendToAll(struct HttpRequest *request, int sock);
+    void sendNodeInfo(struct HttpRequest *request, int sock);
     
 public:
     Dispatcher(char *port, char *settings_file);
@@ -45,7 +48,7 @@ public:
     int create_socket();
     void start();
     void shut_down();
-    void add_host(char *url, int port);
+    void add_host(const char *url, int port);
 };
 
 #endif  // DISPATCHER_H_

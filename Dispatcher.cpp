@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <string.h>
 
 #define MAXPENDING 5
 
@@ -134,6 +135,8 @@ void Dispatcher::dispatch_requests(int id) {
             } else {
                 debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
+        } else if (strcmp(request->resource, "/node_info") == 0) {
+            sendNodeInfo(request, tcp_request->socket);
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = queryType(request->payload);
             switch(query_t) {
@@ -160,9 +163,41 @@ void Dispatcher::dispatch_requests(int id) {
     }
 }
 
+
+void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
+    debug("Send node info.");
+    char *node_info = (char *)malloc(sizeof(char) * 256 * (cluster_nodes->size()+1));
+    char *current_position = node_info;
+    char head[] = "{\"hosts\": [";
+    strncpy(current_position, head, strlen(head));
+    current_position += strlen(head);
+
+    char tmp_node_info_entry[256];
+    for (struct Host *host : *cluster_nodes) {
+        int i = snprintf(tmp_node_info_entry, 256, "{\"ip\": \"%s\", \"total_queries\": %d, \"total_time\": %d},", host->url, host->total_queries, host->total_time);
+        if (i > 256) {
+            log_err("node info to large for buffer");
+        }
+        strncpy(current_position, tmp_node_info_entry, strlen(tmp_node_info_entry));
+        current_position += strlen(tmp_node_info_entry);
+        //struct HttpResponse *response = executeRequest(host, request);
+    }
+    strcpy(current_position-1 , "]}"); // -1 to overwrite the comma
+    printf("%s\n", node_info);
+    struct HttpResponse *response = new HttpResponse;
+    response->status = 200;
+    response->content_length = strlen(node_info);
+    response->payload = node_info;
+
+    sendResponse(response, sock);
+    free(node_info);
+    free(response);
+}
+
+
 void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
-    for (struct Host *host : *distributor->cluster_nodes) {
+    for (struct Host *host : *cluster_nodes) {
         struct HttpResponse *response = executeRequest(host, request);
     }
     close(sock);
@@ -172,6 +207,7 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
 
 Dispatcher::Dispatcher(char *port, char *settings_file) {
     this->port = port;
+    cluster_nodes = new std::vector<struct Host*>;
 
     std::ifstream settingsFile(settings_file);
     if (!settingsFile.is_open()) {
@@ -188,20 +224,17 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     }
 
     Json::Value jsonHosts = v.get("hosts", "");
-    std::vector<struct Host*> *hosts = new std::vector<struct Host*>;
+
     for (auto host: jsonHosts) {
         std::string url = host.get("url", "").asString();
         int port = host.get("port", "0").asInt();
         if (url != "" and port != 0) {
-            debug("Found host with address %s:%i", url.c_str(), port);
-            struct Host *h = new struct Host;
-            h->port = port;
-            h->url = strdup(url.c_str());
-            hosts->push_back(h);
+            const char *url_c = url.c_str();
+            add_host(url_c, port);
         }
     }
 
-    if (hosts->size() == 0) {
+    if (cluster_nodes->size() == 0) {
         debug("Settings file does not contain any valid hosts.");
     }
 
@@ -210,11 +243,11 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
     std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
 
     if (dispatch_algorithm == "Stream") {
-        distributor = new StreamDistributor(hosts);
+        distributor = new StreamDistributor(cluster_nodes);
         debug("Used dispatching algorithm: Stream");
     } else {
         //SimpleRoundRobinDipatcher is the standard algorithm
-        distributor = new RoundRobinDistributor(hosts);
+        distributor = new RoundRobinDistributor(cluster_nodes);
         debug("Used dispatching algorithm: RoundRobin");
     }
 }
@@ -290,10 +323,14 @@ void Dispatcher::shut_down() {
 }
 
 
-void Dispatcher::add_host(char *url, int port) {
+void Dispatcher::add_host(const char *url, int port) {
     struct Host *h = new struct Host;
     h->port = port;
     h->url = strdup(url);
-    distributor->cluster_nodes->push_back(h);
-    debug("Adds host: %zu", distributor->cluster_nodes->size());
+    h->total_queries = 0;
+    h->total_time = 0;
+    cluster_nodes_mutex.lock();
+    cluster_nodes->push_back(h);
+    cluster_nodes_mutex.unlock();
+    debug("Adds host: %zu", cluster_nodes->size());
 }
