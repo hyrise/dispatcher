@@ -1,10 +1,4 @@
 {
-    "hosts": [
-        {"url": "hyrise1", "port": 6000, "core_count": 4, "core_offset": 0},
-        {"url": "hyrise2", "port": 6001, "core_count": 4, "core_offset": 4}
-    ],
+    "hosts": [],
     "threads": 4,
-    "port": 8080,
-    "hyrise_default": "/home/user/hyrise/hyrise_nvm/build/hyrise-server_release",
-    "dispatcher": "/home/user/hyrise/dispatcher/dispatcher"
 }

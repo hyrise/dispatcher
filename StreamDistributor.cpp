@@ -1,6 +1,9 @@
 #include "StreamDistributor.h"
+#include "dbg.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
-StreamDistributor::StreamDistributor(std::vector<Host> *hosts): AbstractDistributor(hosts) {
+StreamDistributor::StreamDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     int thread_count = 4;
     for (unsigned int j = 0; j < hosts->size(); j++)
         for (int i = 1; i <= thread_count; ++i) {
@@ -14,132 +17,73 @@ StreamDistributor::StreamDistributor(std::vector<Host> *hosts): AbstractDistribu
 StreamDistributor::~StreamDistributor() {};
 
 void StreamDistributor::executeRead(int host_id) {
-    std::unique_ptr<HttpResponse> response;
-    Host* host;
+    struct HttpResponse *response;
+    struct Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_read_queue_mtx);
         while (m_parsedReads.empty()) m_read_queue_cv.wait(lck);
-        m_requestTuple_t request = m_parsedReads.front();
+        struct RequestTuple *request_tuple = m_parsedReads.front();
         m_parsedReads.pop();
         lck.unlock();
 
-        host = &(cluster_nodes->at(host_id));
-        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request.request);
+        host = cluster_nodes->at(host_id);
+        debug("Request send to host %s:%d", host->url, host->port);
+        response = executeRequest(host, request_tuple->request);
 
-        sendResponse(std::move(response), request.socket);
+        sendResponse(response, request_tuple->socket);
     }
 }
 
 void StreamDistributor::executeWrite() {
-    std::unique_ptr<HttpResponse> response;
-    Host* host;
+    struct HttpResponse *response;
+    struct Host *host;
 
     while (1) {
         std::unique_lock<std::mutex> lck(m_write_queue_mtx);
         //std::cout << "waiting" << std::endl;
         while (m_parsedWrites.empty()) m_write_queue_cv.wait(lck);
         //std::cout << "notified" << std::endl;
-        m_requestTuple_t request = m_parsedWrites.front();
+        struct RequestTuple *request_tuple = m_parsedWrites.front();
         m_parsedWrites.pop();
         lck.unlock();
         
-        host = &(cluster_nodes->at(0));
-        debug("Request send to host %s:%d", host->getUrl().c_str(), host->getPort());
-        response = host->executeRequest(request.request);
+        host = cluster_nodes->at(0);
+        debug("Request send to host %s:%d", host->url, host->port);
+        response = executeRequest(host, request_tuple->request);
 
-        sendResponse(std::move(response), request.socket);
+        sendResponse(response, request_tuple->socket);
     }
 }
 
-int StreamDistributor::parseQuery(std::unique_ptr<Json::Value> query) {
-    bool writeQuery = false;
-    Json::Value operators;
-    Json::Value obj_value(Json::objectValue);
-    
-    if (!query->isObject() || query->isMember("operators") == false) {
-        std::cerr << "query content does not contain any operators";
-        return -1;
-    }
-    operators = query->get("operators", obj_value);
 
-    for (auto op: operators) {
-        auto type = op.get("type", "").asString();
-        if (type == "InsertScan" or type == "Delete" or type == "PosUpdateIncrementScan" or type == "PosUpdateScan") writeQuery = true;
-        if (type == "TableLoad") return 2;
-    }
-
-    if (writeQuery) return 1;
-
-    return 0;
-}
-
-void StreamDistributor::dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) {
+void StreamDistributor::distribute(struct HttpRequest *request, int sock) {
     std::unique_ptr<HttpResponse> response;
     std::unique_lock<std::mutex> lck;
 
-    debug("dispatch query");
-    int readQuery = parseQuery(std::move(query));
-    if (request.hasDecodedContent("oltp") and request.getDecodedContent("oltp") == "true")
-        readQuery = 1;
-    switch (readQuery) {
-    case 0:
-        lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
-        m_parsedReads.emplace(request, 0, sock);
-        m_read_queue_cv.notify_one();
-        
-        break;
-    case 1:
-        lck = std::unique_lock<std::mutex>(m_write_queue_mtx);
-        m_parsedWrites.emplace(request, 0, sock);
-        m_write_queue_cv.notify_one();
-        break;
-    case 2:
-        for (Host host : *cluster_nodes) {
-            response = host.executeRequest(request);
-        }
-        close(sock);
-        debug("load table");
-        break;
-    default:
-        return;
-    }
+    lck = std::unique_lock<std::mutex>(m_read_queue_mtx);
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple->socket = sock;
+
+    m_parsedReads.push(request_tuple);
+    m_read_queue_cv.notify_one();
 }
 
-void StreamDistributor::dispatchProcedure(HttpRequest& request, int sock) {
-    debug("dispatch procedure");
+
+void StreamDistributor::sendToMaster(struct HttpRequest *request, int sock) {
+    debug("Dispatch procedure.");
 
     std::unique_lock<std::mutex> lck(m_write_queue_mtx);
-    m_parsedWrites.emplace(request, 0, sock);
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple-> socket = sock;
+
+    m_parsedWrites.push(request_tuple);
     m_write_queue_cv.notify_one();
 }
 
-void StreamDistributor::dispatch(HttpRequest& request, int sock) {
-    debug("dispatch");
-
-    std::unique_lock<std::mutex> lck(m_write_queue_mtx);
-    m_parsedWrites.emplace(request, 0, sock);
-    m_write_queue_cv.notify_one();
-}
-
-void StreamDistributor::sendResponse(std::unique_ptr<HttpResponse> response, int sock) {
-    char *buf;
-    int allocatedBytes;
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-    	allocatedBytes = asprintf(&buf, http_response, response->getContentLength(), response->getContent());
-    } else {
-	    allocatedBytes = asprintf(&buf, http_response, 0, "");
-    }
-    if (allocatedBytes == -1) {
-        std::cerr << "An error occurred while creating response" << std::endl;
-        send(sock, error_response, strlen(error_response), 0);
-        close(sock);
-        return;
-    }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-    debug("Closed socket");
-}

@@ -1,24 +1,29 @@
 #ifndef ABSTRACT_DISTRIBUTOR_H_
 #define ABSTRACT_DISTRIBUTOR_H_
 
-#include <vector>
-#include <memory>
+#define READ 0
+#define WRITE 1
+#define LOAD 2
 
-#include "HttpRequest.h"
-#include "Host.h"
+#include <vector>
+
+#include "http.h"
 #include "jsoncpp/json.h"
 
 class AbstractDistributor {
+	friend class Dispatcher;
 public:
-    AbstractDistributor(std::vector<Host> *hosts) {
+    AbstractDistributor(std::vector<struct Host*> *hosts) {
         cluster_nodes = hosts;
     };
-    virtual void dispatch(HttpRequest& request, int sock) = 0;
-    virtual void dispatchQuery(HttpRequest& request, int sock, std::unique_ptr<Json::Value> query) = 0;
-    virtual void dispatchProcedure(HttpRequest& request, int sock) = 0;
-    virtual void notify(std::string message) {}
+    int queryType(char *http_payload);
+    void dispatch(struct HttpRequest *request, int sock);
+    virtual void sendToMaster(struct HttpRequest *request, int sock) = 0;
+    //virtual void sendToAll(struct HttpRequest *request, int sock) = 0;
+    virtual void distribute(struct HttpRequest *request, int sock) = 0;
+    
 protected:
-    std::vector<Host> *cluster_nodes;
+    std::vector<struct Host*> *cluster_nodes;
 };
 
 #endif
