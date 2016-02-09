@@ -53,6 +53,7 @@ int get_content_lenght(const char *buf, const int size) {
     return res;
 }
 
+
 int openConnection(struct Host *host) {
     int sock;
     struct sockaddr_in dest;
@@ -88,7 +89,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     char *http_body_start = NULL;
 
     char method[16], resource[32];
-    size_t content_length = 0;
+    int content_length = 0;
 
 
     ssize_t read_bytes = 0;
@@ -128,7 +129,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
                 content_length = 0;
                 break;
             } else {
-                debug("Header Received #### Content-Length: %zu", content_length);
+                debug("Header Received #### Content-Length: %d", content_length);
             }
         }
         // complete header was received
@@ -153,7 +154,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
     struct HttpRequest *request = new struct HttpRequest;
     request->method = strdup(method);
     request->resource = strdup(resource);
-    request->content_length = (int)content_length;
+    request->content_length = content_length;
     if (content_length == 0) {
         request->payload = NULL;
     } else {
@@ -165,6 +166,7 @@ struct HttpRequest *HttpRequestFromEndpoint(int sock) {
 
 
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
+    debug("execute request %s:%d", host->url, host->port);
     int sock = openConnection(host);
     if (sock == -1) {
         return NULL;
@@ -193,13 +195,13 @@ Connection: Keep-Alive\r\n\r\n\
     char *http_body_start = NULL;
     int status = 0;
     int content_length = 0;
-    char *content;
 
-    buf = new char[BUFFERSIZE];
+    buf = (char *) malloc(sizeof(char) * BUFFERSIZE);
+    check_mem(buf);
     memset( buf, 0, BUFFERSIZE );
 
     while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
-    debug("received %i bytes\ncontent: %s", recv_size, buf );
+        debug("received %i bytes\ncontent: %s", recv_size, buf );
         offset += recv_size;
         if (!first_line_received) {
             char *hit_ptr;
@@ -247,9 +249,9 @@ Connection: Keep-Alive\r\n\r\n\
         // check whether message is complete
         if (http_body_start != NULL) {
             if (((http_body_start - buf) + content_length) == offset) {
-                //debug("complete message received\n header: %s", http_body_start-buf);
-                content = http_body_start;
-                response->payload = content;
+                response->payload = (char *)malloc((content_length + 1) * sizeof(char));
+                strncpy(response->payload, http_body_start, content_length);
+                response->payload[content_length] = '\0';
                 free(buf);
                 close(sock);
                 return response;

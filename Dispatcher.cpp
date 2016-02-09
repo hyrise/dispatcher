@@ -168,7 +168,7 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     debug("Send node info.");
     char *node_info = (char *)malloc(sizeof(char) * 256 * (cluster_nodes->size()+1));
     char *current_position = node_info;
-    char head[] = "{\"hosts\": [";
+    char head[] = "{\"hosts\": [ ";     // important whitespace to have valid json for empty list
     strncpy(current_position, head, strlen(head));
     current_position += strlen(head);
 
@@ -180,9 +180,8 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
         }
         strncpy(current_position, tmp_node_info_entry, strlen(tmp_node_info_entry));
         current_position += strlen(tmp_node_info_entry);
-        //struct HttpResponse *response = executeRequest(host, request);
     }
-    strcpy(current_position-1 , "]}"); // -1 to overwrite the comma
+    strcpy(current_position-1 , "]}"); // -1 to overwrite the comma or whitespace
     printf("%s\n", node_info);
     struct HttpResponse *response = new HttpResponse;
     response->status = 200;
@@ -192,16 +191,44 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     sendResponse(response, sock);
     free(node_info);
     free(response);
+    close(sock);
 }
 
 
 void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
+    char entry_template[] = "{\"host\": \"%s:%d\", \"status\": %d, \"answer\": %s},";
+    char *answer = strdup("[ ");    // important whitespace to have valid json for empty list
+
+    char *entry;
     for (struct Host *host : *cluster_nodes) {
         struct HttpResponse *response = executeRequest(host, request);
+        if (response) {
+            check_mem(asprintf(&entry, entry_template, host->url, host->port, response->status, response->payload));
+            free(response->payload);
+            free(response);
+        } else {
+            check_mem(asprintf(&entry, entry_template, host->url, host->port, 0, NULL));
+        }
+
+        printf("%s\n", entry);
+        check_mem(realloc(answer, strlen(answer) + strlen(entry) + sizeof(char)));   // +1 for terminating \0
+        printf("cpy\n");
+        strcpy(answer + strlen(answer), entry);
+        printf("cpy done\n");
+        free(entry);
     }
+    HttpRequest_free(request);
+    strcpy(answer + strlen(answer)-1 , "]"); // -1 to overwrite the comma  or whitespace
+    struct HttpResponse *response = new HttpResponse;
+    response->status = 200;
+    response->content_length = strlen(answer);
+    response->payload = answer;
+    sendResponse(response, sock);
+
+    free(answer);
+    free(response);
     close(sock);
-    // TODO send response
 }
 
 

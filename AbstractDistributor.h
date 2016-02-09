@@ -1,14 +1,9 @@
 #ifndef ABSTRACT_DISTRIBUTOR_H_
 #define ABSTRACT_DISTRIBUTOR_H_
 
-#define READ 0
-#define WRITE 1
-#define LOAD 2
 
 #include <vector>
-
 #include "http.h"
-#include "jsoncpp/json.h"
 
 class AbstractDistributor {
 	friend class Dispatcher;
