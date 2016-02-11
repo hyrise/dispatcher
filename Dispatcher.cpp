@@ -212,10 +212,11 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
         }
 
         printf("%s\n", entry);
-        check_mem(realloc(answer, strlen(answer) + strlen(entry) + sizeof(char)));   // +1 for terminating \0
-        printf("cpy\n");
+        answer = (char *)realloc(answer, (strlen(answer) + strlen(entry) + 1) * sizeof(char));   // +1 for terminating \0
+        if (answer == NULL) {
+            log_err("Realloc failed.");
+        }
         strcpy(answer + strlen(answer), entry);
-        printf("cpy done\n");
         free(entry);
     }
     HttpRequest_free(request);
@@ -314,7 +315,6 @@ int Dispatcher::create_socket() {
 
 void Dispatcher::start() {
     debug("Start dispatcher");
-
     // Start parser threads
     for (int i = 0; i < thread_pool_size; ++i) {
         parser_thread_pool.emplace_back(dispatch_requests_wrapper, this, i);

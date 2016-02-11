@@ -196,9 +196,9 @@ Connection: Keep-Alive\r\n\r\n\
     int status = 0;
     int content_length = 0;
 
-    buf = (char *) malloc(sizeof(char) * BUFFERSIZE);
+    buf = (char *)malloc(sizeof(char) * BUFFERSIZE);
     check_mem(buf);
-    memset( buf, 0, BUFFERSIZE );
+    memset(buf, 0, BUFFERSIZE);
 
     while ((recv_size = read(sock, buf+offset, BUFFERSIZE-offset)) > 0) {
         debug("received %i bytes\ncontent: %s", recv_size, buf );
