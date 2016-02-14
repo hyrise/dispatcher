@@ -118,6 +118,13 @@ void Dispatcher::dispatch_requests(int id) {
 
         // Allocates memory for the request
         struct HttpRequest *request = HttpRequestFromEndpoint(tcp_request->socket);
+        if (request == NULL) {
+            debug("Invalid Http request.");
+            // TODO send error msg to client
+            close(tcp_request->socket);
+            Request_free(tcp_request);
+            continue;
+        }
 
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
@@ -210,25 +217,23 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
         } else {
             check_mem(asprintf(&entry, entry_template, host->url, host->port, 0, NULL));
         }
-
-        printf("%s\n", entry);
         answer = (char *)realloc(answer, (strlen(answer) + strlen(entry) + 1) * sizeof(char));   // +1 for terminating \0
         if (answer == NULL) {
             log_err("Realloc failed.");
+            exit(EXIT_FAILURE);
         }
         strcpy(answer + strlen(answer), entry);
         free(entry);
     }
-    HttpRequest_free(request);
+
     strcpy(answer + strlen(answer)-1 , "]"); // -1 to overwrite the comma  or whitespace
-    struct HttpResponse *response = new HttpResponse;
-    response->status = 200;
-    response->content_length = strlen(answer);
-    response->payload = answer;
-    sendResponse(response, sock);
+    struct HttpResponse client_response;
+    client_response.status = 200;
+    client_response.content_length = strlen(answer);
+    client_response.payload = answer;
+    sendResponse(&client_response, sock);
 
     free(answer);
-    free(response);
     close(sock);
 }
 
