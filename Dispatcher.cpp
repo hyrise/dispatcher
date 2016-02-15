@@ -195,7 +195,7 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     response->content_length = strlen(node_info);
     response->payload = node_info;
 
-    sendResponse(response, sock);
+    http_send_response(sock, response);
     free(node_info);
     free(response);
     close(sock);
@@ -231,7 +231,7 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
     client_response.status = 200;
     client_response.content_length = strlen(answer);
     client_response.payload = answer;
-    sendResponse(&client_response, sock);
+    http_send_response(sock, &client_response);
 
     free(answer);
     close(sock);
@@ -317,6 +317,7 @@ int Dispatcher::create_socket() {
     freeaddrinfo(res);
     return sock_fd;
 }
+
 
 void Dispatcher::start() {
     debug("Start dispatcher");

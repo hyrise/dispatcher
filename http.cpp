@@ -313,27 +313,33 @@ Connection: Keep-Alive\r\n\r\n\
     return HttpResponseFromEndpoint(sockfd);
 }
 
+const char *http_reason_phrase(int response_status) {
+    switch (response_status) {
+        case 200: return "OK";
+        case 404: return "Not Found";
+        case 500: return "Server Error";
+        default: log_err("Unknown response status %d", response_status); return "";
+    }
+}
 
-void sendResponse(struct HttpResponse *response, int sock) {
+
+void http_send_response(int sockfd, struct HttpResponse *response) {
+    int status = (response != NULL) ? response->status : 200;
+    int content_length = (response != NULL) ? response->content_length : 0;
+    const char *payload = (response != NULL) ? response->payload : "";
+
     char *buf;
-    int allocatedBytes;
-    const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
-    } else {
-        allocatedBytes = asprintf(&buf, http_response, 0, "");
-    }
-    if (allocatedBytes == -1) {
+    char http_response[] = "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
+    if (asprintf(&buf, http_response, status, http_reason_phrase(status),
+                 content_length, payload) == -1) {
         log_err("An error occurred while creating response.");
-        send(sock, error_response, strlen(error_response), 0);
-        close(sock);
-        return;
+        const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
+        send(sockfd, error_response, strlen(error_response), 0);
     }
-    send(sock, buf, strlen(buf), 0);
-    free(buf);
-    close(sock);
-    debug("Closed socket");
+    else {
+        send(sockfd, buf, strlen(buf), 0);
+        free(buf);
+    }
 }
 
 void HttpRequest_free(struct HttpRequest *request) {

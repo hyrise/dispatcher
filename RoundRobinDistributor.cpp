@@ -44,11 +44,12 @@ void RoundRobinDistributor::execute() {
         (host->total_queries)++;
         host->total_time += (unsigned int)timediff(query_start, query_end);
 
-        sendResponse(response, request_tuple->socket);
+        http_send_response(request_tuple->socket, response);
         if (response != NULL) {
             free(response->payload);
             free(response);
         }
+        close(request_tuple->socket);
     }
 }
 

@@ -31,7 +31,8 @@ void StreamDistributor::executeRead(int host_id) {
         debug("Request send to host %s:%d", host->url, host->port);
         response = executeRequest(host, request_tuple->request);
 
-        sendResponse(response, request_tuple->socket);
+        http_send_response(request_tuple->socket, response);
+        close(request_tuple->socket);
     }
 }
 
@@ -52,7 +53,8 @@ void StreamDistributor::executeWrite() {
         debug("Request send to host %s:%d", host->url, host->port);
         response = executeRequest(host, request_tuple->request);
 
-        sendResponse(response, request_tuple->socket);
+        http_send_response(request_tuple->socket, response);
+        close(request_tuple->socket);
     }
 }
 

@@ -32,7 +32,7 @@ struct HttpResponse {
 
 struct HttpRequest *HttpRequestFromEndpoint(int sock);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
-void sendResponse(struct HttpResponse *response, int sock);
+void http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);
 
 #endif
