@@ -105,19 +105,23 @@ void Dispatcher::dispatch_requests(int id) {
 
     while (1) {
         // Get an request out of the request queue
-        std::unique_lock<std::mutex> lck(request_queue_mutex);
-        while (request_queue.empty()) {
-            debug("Wait %d", id);
-            request_queue_empty.wait(lck);
-        };
-        struct Request *tcp_request = request_queue.front();
-        request_queue.pop();
-        lck.unlock();
+        struct Request *tcp_request;
+        debug("Try to lock %d", id);
+        {
+            std::unique_lock<std::mutex> lck(request_queue_mutex);
+            while (request_queue.empty()) {
+                debug("Wait %d", id);
+                request_queue_empty.wait(lck);
+            };
+            tcp_request = request_queue.front();
+            request_queue.pop();
+            debug("Unlock %d", id);
+        }
 
         debug("New request: Handled by thread %i", id);
 
         // Allocates memory for the request
-        struct HttpRequest *request = HttpRequestFromEndpoint(tcp_request->socket);
+        struct HttpRequest *request = http_receive_request(tcp_request->socket);
         if (request == NULL) {
             debug("Invalid Http request.");
             // TODO send error msg to client
@@ -339,11 +343,13 @@ void Dispatcher::start() {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
-        
-        std::unique_lock<std::mutex> lck(request_queue_mutex);
-        request_queue.push(request);
-        request_queue_empty.notify_one();
-        request_queue_mutex.unlock();
+        debug("Main: new request.");
+        {
+            std::unique_lock<std::mutex> lck(request_queue_mutex);
+            debug("Main: push to request_queue.");
+            request_queue.push(request);
+            request_queue_empty.notify_one();
+        }
     }
 }
 
