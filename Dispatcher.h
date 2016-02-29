@@ -50,7 +50,6 @@ private:
 public:
     Dispatcher(char *port, char *settings_file);
     void dispatch_requests(int id);
-    int create_socket();
     void start();
     void shut_down();
     void add_host(const char *url, int port);

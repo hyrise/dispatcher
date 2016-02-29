@@ -63,39 +63,35 @@ void RoundRobinDistributor::execute() {
 void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
     unsigned int host_id, counter;
     debug("Dispatch query.");
-    {
-        std::unique_lock<std::mutex> lck(m_queue_mtx);
+    std::unique_lock<std::mutex> lck(m_queue_mtx);
 
-        counter = read_counter.fetch_add(1);
-        //avoid numeric overflow, reset read count after half of unsigned int range queries
-        if (counter == m_boundary) {
-            read_counter.fetch_sub(m_boundary);
-        }
-        host_id = counter % cluster_nodes->size();
-
-        struct RequestTuple *request_tuple = new RequestTuple();
-        request_tuple->request = request;
-        request_tuple->host = host_id;
-        request_tuple->socket = sock;
-
-        m_parsedRequests.push(request_tuple);
-        m_queue_cv.notify_one();
+    counter = read_counter.fetch_add(1);
+    //avoid numeric overflow, reset read count after half of unsigned int range queries
+    if (counter == m_boundary) {
+        read_counter.fetch_sub(m_boundary);
     }
+    host_id = counter % cluster_nodes->size();
+
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = host_id;
+    request_tuple->socket = sock;
+
+    m_parsedRequests.push(request_tuple);
+    m_queue_cv.notify_one();
 }
 
 
 void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) {
     debug("Send request to master.");
-    {
-        std::unique_lock<std::mutex> lck(m_queue_mtx);
+    std::unique_lock<std::mutex> lck(m_queue_mtx);
 
-        struct RequestTuple *request_tuple = new RequestTuple();
-        request_tuple->request = request;
-        request_tuple->host = 0;
-        request_tuple->socket = sock;
+    struct RequestTuple *request_tuple = new RequestTuple();
+    request_tuple->request = request;
+    request_tuple->host = 0;
+    request_tuple->socket = sock;
 
-        m_parsedRequests.push(request_tuple);
-        m_queue_cv.notify_one();
-    }
+    m_parsedRequests.push(request_tuple);
+    m_queue_cv.notify_one();
 }
 

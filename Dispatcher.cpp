@@ -8,11 +8,11 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <arpa/inet.h>
+#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <string.h>
 
 #define MAXPENDING 5
@@ -290,39 +290,6 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 }
 
 
-int Dispatcher::create_socket() {
-    int sock_fd, s;
-
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
-        log_err("Error getaddrinfo: %s", gai_strerror(s));
-        throw("Error getaddrinfo.");
-    }
-
-    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        log_err("Error: Can't create socket.");
-        throw "Error: Can't create socket.";
-    }
-
-    if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
-        close(sock_fd);
-        log_err("Error: can't bind to socket.");
-        throw "Error: can't bind to socket.";
-    }
-
-    if (listen(sock_fd, MAXPENDING) < 0) {
-        log_err("Error: can't listen to socket.");
-        throw "Error: can't listen to socket.";
-    }
-    freeaddrinfo(res);
-    return sock_fd;
-}
-
-
 void Dispatcher::start() {
     debug("Start dispatcher");
     // Start parser threads
@@ -331,7 +298,7 @@ void Dispatcher::start() {
     }
 
     // create dispatcher socket
-    int socket = create_socket();
+    int socket = http_create_inet_socket(port);
     debug("Dispatcher: Listening on port %s", port);
 
     // Disptach requests

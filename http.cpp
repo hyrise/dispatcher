@@ -3,12 +3,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include "dbg.h"
 
+#define MAXPENDING 5
 
-int openConnection(struct Host *host) {
+
+int http_open_connection(struct Host *host) {
     int sock;
     struct sockaddr_in dest;
 
@@ -30,6 +34,39 @@ int openConnection(struct Host *host) {
     }
 
     return sock;
+}
+
+
+int http_create_inet_socket(const char *port) {
+    int sock_fd, s;
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+        log_err("Error getaddrinfo: %s", gai_strerror(s));
+        throw("Error getaddrinfo.");
+    }
+
+    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
+        log_err("Error: Can't create socket.");
+        throw "Error: Can't create socket.";
+    }
+
+    if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+        close(sock_fd);
+        log_err("Error: can't bind to socket.");
+        throw "Error: can't bind to socket.";
+    }
+
+    if (listen(sock_fd, MAXPENDING) < 0) {
+        log_err("Error: can't listen to socket.");
+        throw "Error: can't listen to socket.";
+    }
+    freeaddrinfo(res);
+    return sock_fd;
 }
 
 
@@ -55,9 +92,9 @@ int http_read_line(int sockfd, char **line) {
             }
         }
         buf_offset += recv_size;
-    }
+    }//TODO
     free(buf);
-    if (line != NULL) {
+    if (*line != NULL) {
         debug("Receive line: %s", *line);
         return 0;
     }
@@ -221,6 +258,7 @@ error:
 
 
 struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
+    debug("HttpResponseFromEndpoint");
     char *line = NULL;
     int status = 0;
     int content_length = -1;
@@ -295,7 +333,7 @@ error:
 
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
     debug("execute request %s:%d", host->url, host->port);
-    int sockfd = openConnection(host);
+    int sockfd = http_open_connection(host);
     if (sockfd == -1) {
         return NULL;
     }
@@ -333,13 +371,18 @@ Content-Length: %d\r\n\r\n\
        log_err("An error occurred while creating response.");
         return -1;
     }
-    send(sockfd, buf, strlen(buf), 0);
+    if (send(sockfd, buf, strlen(buf), 0) == -1) {
+        log_err("Send response.");
+        free(buf);
+        return -1;
+    };
     free(buf);
     return 0;
 }
 
 
-void http_send_response(int sockfd, struct HttpResponse *response) {
+int http_send_response(int sockfd, struct HttpResponse *response) {
+    debug("http_send_response");
     int status = (response != NULL) ? response->status : 200;
     int content_length = (response != NULL) ? response->content_length : 0;
     const char *payload = (response != NULL) ? response->payload : "";
@@ -350,12 +393,20 @@ void http_send_response(int sockfd, struct HttpResponse *response) {
                  content_length, payload) == -1) {
         log_err("An error occurred while creating response.");
         const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
-        send(sockfd, error_response, strlen(error_response), 0);
+        if (send(sockfd, error_response, strlen(error_response), 0) == -1) {
+            log_err("Send response.");
+            return -1;
+        };
     }
     else {
-        send(sockfd, buf, strlen(buf), 0);
+        if (send(sockfd, buf, strlen(buf), 0) == -1) {
+            log_err("Send response.");
+            free(buf);
+            return -1;
+        };
         free(buf);
     }
+    return 0;
 }
 
 void HttpRequest_free(struct HttpRequest *request) {
