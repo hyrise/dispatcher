@@ -45,6 +45,10 @@ void RoundRobinDistributor::execute() {
         host->total_time += (unsigned int)timediff(query_start, query_end);
 
         sendResponse(response, request_tuple->socket);
+        if (response != NULL) {
+            free(response->payload);
+            free(response);
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 OBJS = http.o Dispatcher.o jsoncpp.o RoundRobinDistributor.o StreamDistributor.o
 CXX = g++
-CXXFLAGS = -Wall -std=c++11 -O3
+CXXFLAGS = -Wall -std=c++11 -g -O3
 LDLIBS = -lpthread
 INCLUDEPATHS = ./jsoncpp
 

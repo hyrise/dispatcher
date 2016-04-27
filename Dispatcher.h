@@ -12,6 +12,11 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+
+#define READ 0
+#define WRITE 1
+#define LOAD 2
+
 struct Request {
     int socket;
     struct sockaddr addr;

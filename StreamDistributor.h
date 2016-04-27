@@ -42,8 +42,6 @@ private:
     };
     std::queue<struct RequestTuple*> m_parsedReads;
     std::queue<struct RequestTuple*> m_parsedWrites;
-
-    int parseQuery(std::unique_ptr<Json::Value> query);
 };
 
 #endif
