@@ -62,6 +62,7 @@ int start_hyrise_mock(const char *port) {
         }
         close(socket_fd);
     }
+    return 0;
 }
 
 
@@ -75,6 +76,7 @@ int main(int argc, char *argv[]) {
 
     char *port = argv[1];
 
-
     start_hyrise_mock(port);
+    return 0;
 }
+

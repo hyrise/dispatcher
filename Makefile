@@ -14,7 +14,7 @@ hyrise_mock : http.o hyrise_mock.c
 	cc http.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
 
 http.o: http.h http.c
-	cc -c http.c $(CFLAGS)
+	cc -D_GNU_SOURCE -c http.c $(CFLAGS)
 
 jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c jsoncpp/jsoncpp.cpp $(CXXFLAGS) -I $(INCLUDEPATHS)
