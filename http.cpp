@@ -47,23 +47,23 @@ int http_create_inet_socket(const char *port) {
     hints.ai_flags = AI_PASSIVE;
     if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
         log_err("Error getaddrinfo: %s", gai_strerror(s));
-        throw("Error getaddrinfo.");
+        exit(-1);
     }
 
     if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         log_err("Error: Can't create socket.");
-        throw "Error: Can't create socket.";
+        exit(-1);
     }
 
     if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
         close(sock_fd);
         log_err("Error: can't bind to socket.");
-        throw "Error: can't bind to socket.";
+        exit(-1);
     }
 
     if (listen(sock_fd, MAXPENDING) < 0) {
         log_err("Error: can't listen to socket.");
-        throw "Error: can't listen to socket.";
+        exit(-1);
     }
     freeaddrinfo(res);
     return sock_fd;
@@ -366,7 +366,7 @@ Content-Length: %d\r\n\r\n\
 %s";
 
     char *buf;
-    int allocatedBytes = asprintf(&buf, http_post, "/query/", request->content_length, request->payload);
+    int allocatedBytes = asprintf(&buf, http_post, "/query", request->content_length, request->payload);
     if (allocatedBytes == -1) {
        log_err("An error occurred while creating response.");
         return -1;
@@ -376,6 +376,7 @@ Content-Length: %d\r\n\r\n\
         free(buf);
         return -1;
     };
+    debug("SEND\n%s\n", buf);
     free(buf);
     return 0;
 }

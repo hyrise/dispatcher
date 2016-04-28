@@ -15,7 +15,7 @@
 #include <netinet/in.h>
 #include <string.h>
 
-#define MAXPENDING 5
+#define MAXPENDING 10
 
 
 void Request_free(struct Request *request) {
@@ -46,6 +46,7 @@ std::string urlDecode(std::string &SRC) {
 
 
 int queryType(char *http_payload) {
+    debug("Find out query type");
     if (http_payload == NULL) {
         return -1;
     }
@@ -129,6 +130,7 @@ void Dispatcher::dispatch_requests(int id) {
             Request_free(tcp_request);
             continue;
         }
+        debug("Request payload: %s", request->payload);
 
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
@@ -275,7 +277,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         debug("Settings file does not contain any valid hosts.");
     }
 
-    thread_pool_size = v.get("threads", 7).asInt();
+    thread_pool_size = v.get("threads", 1).asInt();
 
     std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
 
