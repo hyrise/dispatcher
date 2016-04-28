@@ -307,6 +307,7 @@ void Dispatcher::start() {
     while(1) {
         // Allocates memory for request
         struct Request *request = new struct Request();
+        request->addrlen = sizeof(request->addr);
         request->socket = accept(socket, &(request->addr), &(request->addrlen));
         if (request->socket < 0) {
             log_err("Error: on accept.");
