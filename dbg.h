@@ -6,7 +6,7 @@
 #include <string.h>
 //#include <cstring>
 
-//#define NDEBUG
+#define NDEBUG
 
 #define clean_errno() (errno == 0 ? "None" : strerror(errno))
 

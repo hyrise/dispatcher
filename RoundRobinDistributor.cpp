@@ -13,7 +13,7 @@ unsigned timediff(struct timeval start,  struct timeval stop) {
 
 RoundRobinDistributor::RoundRobinDistributor(std::vector<struct Host*> *hosts): AbstractDistributor(hosts) {
     read_counter.store(0);
-    int thread_count = 16;
+    int thread_count = 10;
     for (int i = 1; i <= thread_count; ++i) {
         thread_pool.emplace_back(&RoundRobinDistributor::execute, this);
     }

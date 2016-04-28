@@ -17,4 +17,4 @@ jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c jsoncpp/jsoncpp.cpp $(CXXFLAGS) -I $(INCLUDEPATHS)
 
 clean:
-	rm *.o start_dispatcher
+	rm *.o start_dispatcher hyrise_mock

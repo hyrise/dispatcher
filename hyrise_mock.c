@@ -31,7 +31,7 @@ int start_hyrise_mock(const char *port) {
     debug("Hyrise mock: Listening on port %s", port);
 
     STAILQ_HEAD(slisthead, request) head = STAILQ_HEAD_INITIALIZER(head);
-    struct slisthead *headp;
+    //struct slisthead *headp;
     STAILQ_INIT(&head);
 
     // Disptach requests
@@ -48,7 +48,7 @@ int start_hyrise_mock(const char *port) {
         {
             pthread_mutex_lock(&request_queue_mutex);
             debug("Main: push to request_queue.");
-            
+
             struct request *r = (struct request *) malloc(sizeof(struct request));
             r->socket_fd = socket_fd;
 
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
     }
 
     char *port = argv[1];
-    
+
 
     start_hyrise_mock(port);
 }
