@@ -3,7 +3,11 @@
 #include "jsoncpp/json.h"
 #include "RoundRobinDistributor.h"
 #include "StreamDistributor.h"
+
+extern "C"
+{
 #include "http.h"
+}
 
 #include <iostream>
 #include <fstream>

@@ -3,7 +3,10 @@
 
 
 #include <vector>
+extern "C"
+{
 #include "http.h"
+}
 
 class AbstractDistributor {
 	friend class Dispatcher;

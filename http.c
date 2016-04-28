@@ -55,7 +55,7 @@ int http_create_inet_socket(const char *port) {
         exit(-1);
     }
 
-    if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+    if (bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
         close(sock_fd);
         log_err("Error: can't bind to socket.");
         exit(-1);
