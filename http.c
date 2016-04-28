@@ -1,14 +1,19 @@
 #include "http.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include "dbg.h"
 
+#define MAXPENDING 5
 
-int openConnection(struct Host *host) {
+
+int http_open_connection(struct Host *host) {
     int sock;
     struct sockaddr_in dest;
 
@@ -30,6 +35,39 @@ int openConnection(struct Host *host) {
     }
 
     return sock;
+}
+
+
+int http_create_inet_socket(const char *port) {
+    int sock_fd, s;
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+        log_err("Error getaddrinfo: %s", gai_strerror(s));
+        exit(-1);
+    }
+
+    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
+        log_err("Error: Can't create socket.");
+        exit(-1);
+    }
+
+    if (bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+        close(sock_fd);
+        log_err("Error: can't bind to socket.");
+        exit(-1);
+    }
+
+    if (listen(sock_fd, MAXPENDING) < 0) {
+        log_err("Error: can't listen to socket.");
+        exit(-1);
+    }
+    freeaddrinfo(res);
+    return sock_fd;
 }
 
 
@@ -55,9 +93,9 @@ int http_read_line(int sockfd, char **line) {
             }
         }
         buf_offset += recv_size;
-    }
+    }//TODO
     free(buf);
-    if (line != NULL) {
+    if (*line != NULL) {
         debug("Receive line: %s", *line);
         return 0;
     }
@@ -147,7 +185,7 @@ int http_parse_header_line(char *line, char **field_name, char **field_value) {
     return 0;
 }
 
-struct HttpRequest *HttpRequestFromEndpoint(int sockfd) {
+struct HttpRequest *http_receive_request(int sockfd) {
     char *line = NULL;
     char *method = NULL;
     char *resource = NULL;
@@ -221,6 +259,7 @@ error:
 
 
 struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
+    debug("HttpResponseFromEndpoint");
     char *line = NULL;
     int status = 0;
     int content_length = -1;
@@ -267,6 +306,10 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
         }
         if (recv_size == 0) {
             debug("End of TCP stream.");
+            if (payload_offset < content_length) {
+                log_err("Connection Error before receiving full message.");
+                goto error;
+            }
         }
         else if (recv_size == -1) {
             log_err("Error while reading TCP stream.");
@@ -291,49 +334,81 @@ error:
 
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
     debug("execute request %s:%d", host->url, host->port);
-    int sockfd = openConnection(host);
+    int sockfd = http_open_connection(host);
     if (sockfd == -1) {
         return NULL;
     }
 
-    char http_post[] = "POST %s HTTP/1.1\r\n\
-Content-Length: %d\r\n\
-Connection: Keep-Alive\r\n\r\n\
-%s";
-
-    char *buf;
-    int allocatedBytes = asprintf(&buf, http_post, "/query/", request->content_length, request->payload);
-    if (allocatedBytes == -1) {
-       log_err("Error during creating request.");
+    if (http_send_request(sockfd, request) != 0) {
         return NULL;
     }
-    send(sockfd, buf, strlen(buf), 0);
-    free(buf);
 
-    return HttpResponseFromEndpoint(sockfd);
+    struct HttpResponse *response = HttpResponseFromEndpoint(sockfd);
+    debug("Close socket.");
+    close(sockfd);
+
+    return response;
+}
+
+const char *http_reason_phrase(int response_status) {
+    switch (response_status) {
+        case 200: return "OK";
+        case 404: return "Not Found";
+        case 500: return "Server Error";
+        default: log_err("Unknown response status %d", response_status); return "";
+    }
 }
 
 
-void sendResponse(struct HttpResponse *response, int sock) {
+int http_send_request(int sockfd, struct HttpRequest *request) {
+    char http_post[] = "POST %s HTTP/1.1\r\n\
+Connection: close\r\n\
+Content-Length: %d\r\n\r\n\
+%s";
+
     char *buf;
-    int allocatedBytes;
-    const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
-    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Keep-Alive\r\n\r\n%s";
-    if (response) {
-        allocatedBytes = asprintf(&buf, http_response, response->content_length, response->payload);
-    } else {
-        allocatedBytes = asprintf(&buf, http_response, 0, "");
-    }
+    int allocatedBytes = asprintf(&buf, http_post, "/query", request->content_length, request->payload);
     if (allocatedBytes == -1) {
-        log_err("An error occurred while creating response.");
-        send(sock, error_response, strlen(error_response), 0);
-        close(sock);
-        return;
+       log_err("An error occurred while creating response.");
+        return -1;
     }
-    send(sock, buf, strlen(buf), 0);
+    if (send(sockfd, buf, strlen(buf), 0) == -1) {
+        log_err("Send response.");
+        free(buf);
+        return -1;
+    };
+    debug("SEND\n%s\n", buf);
     free(buf);
-    close(sock);
-    debug("Closed socket");
+    return 0;
+}
+
+
+int http_send_response(int sockfd, struct HttpResponse *response) {
+    debug("http_send_response");
+    int status = (response != NULL) ? response->status : 200;
+    int content_length = (response != NULL) ? response->content_length : 0;
+    const char *payload = (response != NULL) ? response->payload : "";
+
+    char *buf;
+    char http_response[] = "HTTP/1.1 %d %s\r\nContent-Length: %d\r\n\r\n%s";
+    if (asprintf(&buf, http_response, status, http_reason_phrase(status),
+                 content_length, payload) == -1) {
+        log_err("An error occurred while creating response.");
+        const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
+        if (send(sockfd, error_response, strlen(error_response), 0) == -1) {
+            log_err("Send response.");
+            return -1;
+        };
+    }
+    else {
+        if (send(sockfd, buf, strlen(buf), 0) == -1) {
+            log_err("Send response.");
+            free(buf);
+            return -1;
+        };
+        free(buf);
+    }
+    return 0;
 }
 
 void HttpRequest_free(struct HttpRequest *request) {

@@ -1,8 +1,6 @@
 #include "Dispatcher.h"
 #include <iostream>
 
-
-
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cout << "USAGE: ./start_dispatcher PORT HOSTS_SETTINGS" << std::endl;

@@ -3,7 +3,10 @@
 
 
 #include <vector>
+extern "C"
+{
 #include "http.h"
+}
 
 class AbstractDistributor {
 	friend class Dispatcher;
@@ -12,9 +15,7 @@ public:
         cluster_nodes = hosts;
     };
     int queryType(char *http_payload);
-    void dispatch(struct HttpRequest *request, int sock);
     virtual void sendToMaster(struct HttpRequest *request, int sock) = 0;
-    //virtual void sendToAll(struct HttpRequest *request, int sock) = 0;
     virtual void distribute(struct HttpRequest *request, int sock) = 0;
     
 protected:

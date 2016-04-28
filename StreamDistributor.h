@@ -22,8 +22,6 @@ public:
     virtual void sendToMaster(struct HttpRequest *request, int sock);
     virtual void distribute(struct HttpRequest *request, int sock);
 
-    void dispatch(struct HttpRequest *request, int sock);
-
     void executeRead(int host_id);
     void executeWrite();
 private:

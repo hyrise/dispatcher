@@ -30,9 +30,15 @@ struct HttpResponse {
     char *payload;
 };
 
-struct HttpRequest *HttpRequestFromEndpoint(int sock);
+
+int http_create_inet_socket(const char *port);
+int http_open_connection(struct Host *host);
+struct HttpRequest *http_receive_request(int sock);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
-void sendResponse(struct HttpResponse *response, int sock);
+int http_send_request(int sockfd, struct HttpRequest *request);
+int http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);
+
+struct HttpResponse *HttpResponseFromEndpoint(int sockfd);
 
 #endif

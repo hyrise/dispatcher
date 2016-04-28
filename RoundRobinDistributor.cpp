@@ -27,13 +27,16 @@ void RoundRobinDistributor::execute() {
     struct timeval query_start, query_end;
 
     while (1) {
-        std::unique_lock<std::mutex> lck(m_queue_mtx);
-        //std::cout << "waiting" << std::endl;
-        while (m_parsedRequests.empty()) m_queue_cv.wait(lck);
-        //std::cout << "notified" << std::endl;
-        RequestTuple *request_tuple = m_parsedRequests.front();
-        m_parsedRequests.pop();
-        lck.unlock();
+        RequestTuple *request_tuple;
+        {
+            std::unique_lock<std::mutex> lck(m_queue_mtx);
+            while (m_parsedRequests.empty()) {
+                debug("Wait Distributor thread.");
+                m_queue_cv.wait(lck);
+            }
+            request_tuple = m_parsedRequests.front();
+            m_parsedRequests.pop();
+        }
         
         host = cluster_nodes->at(request_tuple->host);
         debug("Request send to host %s:%d", host->url, host->port);
@@ -44,20 +47,23 @@ void RoundRobinDistributor::execute() {
         (host->total_queries)++;
         host->total_time += (unsigned int)timediff(query_start, query_end);
 
-        sendResponse(response, request_tuple->socket);
+        debug("Response to client.");
+        http_send_response(request_tuple->socket, response);
         if (response != NULL) {
             free(response->payload);
             free(response);
         }
+        debug("Close client socket.");
+        close(request_tuple->socket);
+        free(request_tuple);
     }
 }
 
 
 void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
     unsigned int host_id, counter;
-    std::unique_lock<std::mutex> lck(m_queue_mtx);
-
     debug("Dispatch query.");
+    std::unique_lock<std::mutex> lck(m_queue_mtx);
 
     counter = read_counter.fetch_add(1);
     //avoid numeric overflow, reset read count after half of unsigned int range queries

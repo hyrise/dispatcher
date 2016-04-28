@@ -3,19 +3,23 @@
 #include "jsoncpp/json.h"
 #include "RoundRobinDistributor.h"
 #include "StreamDistributor.h"
+
+extern "C"
+{
 #include "http.h"
+}
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <arpa/inet.h>
+#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <string.h>
 
-#define MAXPENDING 5
+#define MAXPENDING 10
 
 
 void Request_free(struct Request *request) {
@@ -46,6 +50,7 @@ std::string urlDecode(std::string &SRC) {
 
 
 int queryType(char *http_payload) {
+    debug("Find out query type");
     if (http_payload == NULL) {
         return -1;
     }
@@ -105,19 +110,23 @@ void Dispatcher::dispatch_requests(int id) {
 
     while (1) {
         // Get an request out of the request queue
-        std::unique_lock<std::mutex> lck(request_queue_mutex);
-        while (request_queue.empty()) {
-            debug("Wait %d", id);
-            request_queue_empty.wait(lck);
-        };
-        struct Request *tcp_request = request_queue.front();
-        request_queue.pop();
-        lck.unlock();
+        struct Request *tcp_request;
+        debug("Try to lock %d", id);
+        {
+            std::unique_lock<std::mutex> lck(request_queue_mutex);
+            while (request_queue.empty()) {
+                debug("Wait %d", id);
+                request_queue_empty.wait(lck);
+            };
+            tcp_request = request_queue.front();
+            request_queue.pop();
+            debug("Unlock %d", id);
+        }
 
         debug("New request: Handled by thread %i", id);
 
         // Allocates memory for the request
-        struct HttpRequest *request = HttpRequestFromEndpoint(tcp_request->socket);
+        struct HttpRequest *request = http_receive_request(tcp_request->socket);
         if (request == NULL) {
             debug("Invalid Http request.");
             // TODO send error msg to client
@@ -125,6 +134,7 @@ void Dispatcher::dispatch_requests(int id) {
             Request_free(tcp_request);
             continue;
         }
+        debug("Request payload: %s", request->payload);
 
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
@@ -195,7 +205,7 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     response->content_length = strlen(node_info);
     response->payload = node_info;
 
-    sendResponse(response, sock);
+    http_send_response(sock, response);
     free(node_info);
     free(response);
     close(sock);
@@ -231,7 +241,7 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
     client_response.status = 200;
     client_response.content_length = strlen(answer);
     client_response.payload = answer;
-    sendResponse(&client_response, sock);
+    http_send_response(sock, &client_response);
 
     free(answer);
     close(sock);
@@ -271,7 +281,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         debug("Settings file does not contain any valid hosts.");
     }
 
-    thread_pool_size = v.get("threads", 7).asInt();
+    thread_pool_size = v.get("threads", 1).asInt();
 
     std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
 
@@ -286,38 +296,6 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 }
 
 
-int Dispatcher::create_socket() {
-    int sock_fd, s;
-
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
-        log_err("Error getaddrinfo: %s", gai_strerror(s));
-        throw("Error getaddrinfo.");
-    }
-
-    if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        log_err("Error: Can't create socket.");
-        throw "Error: Can't create socket.";
-    }
-
-    if (::bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
-        close(sock_fd);
-        log_err("Error: can't bind to socket.");
-        throw "Error: can't bind to socket.";
-    }
-
-    if (listen(sock_fd, MAXPENDING) < 0) {
-        log_err("Error: can't listen to socket.");
-        throw "Error: can't listen to socket.";
-    }
-    freeaddrinfo(res);
-    return sock_fd;
-}
-
 void Dispatcher::start() {
     debug("Start dispatcher");
     // Start parser threads
@@ -326,23 +304,26 @@ void Dispatcher::start() {
     }
 
     // create dispatcher socket
-    int socket = create_socket();
+    int socket = http_create_inet_socket(port);
     debug("Dispatcher: Listening on port %s", port);
 
     // Disptach requests
     while(1) {
         // Allocates memory for request
         struct Request *request = new struct Request();
+        request->addrlen = sizeof(request->addr);
         request->socket = accept(socket, &(request->addr), &(request->addrlen));
         if (request->socket < 0) {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
-        
-        std::unique_lock<std::mutex> lck(request_queue_mutex);
-        request_queue.push(request);
-        request_queue_empty.notify_one();
-        request_queue_mutex.unlock();
+        debug("Main: new request.");
+        {
+            std::unique_lock<std::mutex> lck(request_queue_mutex);
+            debug("Main: push to request_queue.");
+            request_queue.push(request);
+            request_queue_empty.notify_one();
+        }
     }
 }
 
