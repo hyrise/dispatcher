@@ -53,6 +53,7 @@ public:
     void start();
     void shut_down();
     void add_host(const char *url, int port);
+    void remove_host(const char *url, int port);
 };
 
 #endif  // DISPATCHER_H_
