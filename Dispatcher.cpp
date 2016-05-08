@@ -152,6 +152,14 @@ void Dispatcher::dispatch_requests(int id) {
             } else {
                 debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
+        } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
+            char *delimiter = strchr(request->resource, ':');
+            if (delimiter != NULL) {
+                char *ip = strndup(request->resource + 13, delimiter - (request->resource + 13));
+                int port = 0;
+                remove_host(ip, port);
+                free(ip);
+            }
         } else if (strcmp(request->resource, "/node_info") == 0) {
             sendNodeInfo(request, tcp_request->socket);
         } else if (strcmp(request->resource, "/query") == 0) {
@@ -347,3 +355,21 @@ void Dispatcher::add_host(const char *url, int port) {
     cluster_nodes_mutex.unlock();
     debug("Adds host: %zu", cluster_nodes->size());
 }
+
+
+void Dispatcher::remove_host(const char *url, int port) {
+    debug("Try to remove host: %s", url);
+    int i;
+    cluster_nodes_mutex.lock();
+    for (i=0; i<cluster_nodes->size(); i++) {
+        if (strcmp(cluster_nodes->at(i)->url, url) == 0) {
+            free(cluster_nodes->at(i)->url);
+            free(cluster_nodes->at(i));
+            cluster_nodes->erase(cluster_nodes->begin() + i);
+            debug("Removed host: %zu", cluster_nodes->size());
+            break;
+        }
+    }
+    cluster_nodes_mutex.unlock();
+}
+
