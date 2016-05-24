@@ -10,7 +10,7 @@
 #include <netinet/in.h>
 #include "dbg.h"
 
-#define MAXPENDING 5
+#define MAXPENDING 20
 
 
 int http_open_connection(struct Host *host) {
@@ -74,6 +74,7 @@ int http_create_inet_socket(const char *port) {
 int http_read_line(int sockfd, char **line) {
     *line  = NULL;
     char *buf = (char *)malloc(sizeof(char) * BUFFERSIZE);
+    check_mem(buf);
     size_t buf_offset = 0;  // total received bytes
     int got_cr = 0;
 
@@ -229,6 +230,7 @@ struct HttpRequest *http_receive_request(int sockfd) {
         ssize_t recv_size = 0;
         size_t payload_offset = 0;
         payload = (char *)calloc(sizeof(char), content_length + 1);
+        check_mem(payload);
         while ((recv_size = read(sockfd, payload + payload_offset, content_length-payload_offset)) > 0) {
             payload_offset += recv_size;
         }
@@ -242,6 +244,7 @@ struct HttpRequest *http_receive_request(int sockfd) {
 
     // create and fill return object
     request = (struct HttpRequest *)malloc(sizeof(struct HttpRequest));
+    check_mem(request);
     request->method = method;
     request->resource = resource;
     request->content_length = content_length;
@@ -301,6 +304,7 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
         ssize_t recv_size = 0;
         size_t payload_offset = 0;
         payload = (char *)calloc(sizeof(char), content_length + 1);
+        check_mem(payload);
         while ((recv_size = read(sockfd, payload + payload_offset, content_length-payload_offset)) > 0) {
             payload_offset += recv_size;
         }
@@ -319,6 +323,7 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
 
     // create and fill return object
     response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+    check_mem(response);
     response->status = status;
     response->content_length = content_length;
     response->payload = payload;
