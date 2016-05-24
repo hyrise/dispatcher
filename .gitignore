@@ -1,3 +1,5 @@
 start_dispatcher
-settings.json
+query_hyrise
+hyrise_mock
+settings*.json
 *.o
