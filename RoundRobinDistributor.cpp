@@ -49,10 +49,8 @@ void RoundRobinDistributor::execute() {
 
         debug("Response to client.");
         http_send_response(request_tuple->socket, response);
-        if (response != NULL) {
-            free(response->payload);
-            free(response);
-        }
+        HttpResponse_free(response);
+
         debug("Close client socket.");
         close(request_tuple->socket);
         free(request_tuple);

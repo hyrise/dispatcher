@@ -50,6 +50,7 @@ void StreamDistributor::executeRead(int host_id) {
         host->total_time += (unsigned int)timediff2(query_start, query_end);
 
         http_send_response(request_tuple->socket, response);
+        HttpResponse_free(response);
         close(request_tuple->socket);
     }
 }
@@ -74,6 +75,7 @@ void StreamDistributor::executeWrite() {
         response = executeRequest(host, request_tuple->request);
 
         http_send_response(request_tuple->socket, response);
+        HttpResponse_free(response);
         close(request_tuple->socket);
     }
 }

@@ -230,8 +230,7 @@ void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
         struct HttpResponse *response = executeRequest(host, request);
         if (response) {
             check_mem(asprintf(&entry, entry_template, host->url, host->port, response->status, response->payload));
-            free(response->payload);
-            free(response);
+            HttpResponse_free(response);
         } else {
             check_mem(asprintf(&entry, entry_template, host->url, host->port, 0, NULL));
         }
@@ -359,7 +358,7 @@ void Dispatcher::add_host(const char *url, int port) {
 
 void Dispatcher::remove_host(const char *url, int port) {
     debug("Try to remove host: %s", url);
-    int i;
+    size_t i;
     cluster_nodes_mutex.lock();
     for (i=0; i<cluster_nodes->size(); i++) {
         if (strcmp(cluster_nodes->at(i)->url, url) == 0) {

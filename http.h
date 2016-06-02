@@ -32,12 +32,13 @@ struct HttpResponse {
 
 
 int http_create_inet_socket(const char *port);
-int http_open_connection(struct Host *host);
+int http_open_connection(const char *url, int port);
 struct HttpRequest *http_receive_request(int sock);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
 int http_send_request(int sockfd, struct HttpRequest *request);
 int http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);
+void HttpResponse_free(struct HttpResponse *response);
 
 struct HttpResponse *HttpResponseFromEndpoint(int sockfd);
 

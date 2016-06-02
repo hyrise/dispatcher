@@ -13,7 +13,7 @@
 #define MAXPENDING 20
 
 
-int http_open_connection(struct Host *host) {
+int http_open_connection(const char *url, int port) {
     int sock;
     struct sockaddr_in dest;
 
@@ -25,8 +25,8 @@ int http_open_connection(struct Host *host) {
     //---Initialize server address/port struct
     bzero(&dest, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr(host->url);
-    dest.sin_port = htons(host->port);
+    dest.sin_addr.s_addr = inet_addr(url);
+    dest.sin_port = htons(port);
 
     //---Connect to server
     if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
@@ -339,7 +339,7 @@ error:
 
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
     debug("execute request %s:%d", host->url, host->port);
-    int sockfd = http_open_connection(host);
+    int sockfd = http_open_connection(host->url, host->port);
     if (sockfd == -1) {
         return NULL;
     }
@@ -416,9 +416,22 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
     return 0;
 }
 
+
 void HttpRequest_free(struct HttpRequest *request) {
+    if (request == NULL) {
+        return;
+    }
     free(request->method);
     free(request->resource);
     free(request->payload);
     free(request);
+}
+
+
+void HttpResponse_free(struct HttpResponse *response) {
+    if (response == NULL) {
+        return;
+    }
+    free(response->payload);
+    free(response);
 }

@@ -5,8 +5,8 @@
 #include <pthread.h>
 #include <sys/time.h>
 
-#define THREADS 16
-#define QUERIES 64
+#define THREADS 20
+#define QUERIES 100
 
 #define BUFFER_SIZE 16384
 
@@ -29,8 +29,7 @@ void *query_hyrise(void *arg) {
         struct HttpResponse *response = executeRequest(qha->host, qha->request);
         if (response != NULL) {
             printf("%d ---------------------------------------\n %s\n", i, response->payload);
-            free(response->payload);
-            free(response);
+            HttpResponse_free(response);
         }
         else {
             error_counter += 1;
@@ -60,11 +59,13 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
     strncpy(query, "query=", strlen("query="));
-    size_t s = fread(&query[6], sizeof(char), BUFFER_SIZE, f);
+    size_t s = fread(&query[6], sizeof(char), BUFFER_SIZE-6, f);
 
-    if (s != 0 && s < BUFFER_SIZE) {
+    if (ferror(f)) {
+        printf("ERROR reading query file\n");
+        return -1;
+    } else {
         query[s + 6] = '\0';
-        //printf("%s\n", query);
     }
 
     struct Host h;
@@ -96,4 +97,5 @@ int main(int argc, char *argv[]) {
     gettimeofday(&query_end, NULL);
     printf("%f queries/s\n", (QUERIES * 1000 * 1000.0)/timediff(query_start, query_end));
 
+    return 0;
 }
