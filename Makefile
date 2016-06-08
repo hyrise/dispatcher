@@ -5,19 +5,25 @@ CFLAGS = -Wall -g -O3
 LDLIBS = -lpthread
 INCLUDEPATHS = ./jsoncpp
 
-all: start_dispatcher hyrise_mock query_hyrise
+all: start_dispatcher hyrise_mock query_hyrise dict_test
 
 start_dispatcher : $(OBJS) http.o main.cpp
-	$(CXX) main.cpp $(OBJS) http.o -o start_dispatcher $(CXXFLAGS) $(LDLIBS)
+	$(CXX) main.cpp $(OBJS) dict.o http.o -o start_dispatcher $(CXXFLAGS) $(LDLIBS)
 
 hyrise_mock : http.o hyrise_mock.c
-	cc http.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
+	cc http.o dict.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
 
 query_hyrise : http.o query_hyrise.o
-	cc http.o query_hyrise.c -o query_hyrise $(CFLAGS) $(LDLIBS)
+	cc http.o dict.o query_hyrise.c -o query_hyrise $(CFLAGS) $(LDLIBS)
 
-http.o: http.h http.c
+http.o: http.h http.c dict.o
 	cc -D_GNU_SOURCE -c http.c $(CFLAGS)
+
+dict.o: dict.h dict.c
+	cc -D_GNU_SOURCE -c dict.c $(CFLAGS)
+
+dict_test: dict.o dict_test.c
+	cc dict.o dict_test.c -o dict_test $(CFLAGS) $(LDLIBS)
 
 jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c jsoncpp/jsoncpp.cpp $(CXXFLAGS) -I $(INCLUDEPATHS)

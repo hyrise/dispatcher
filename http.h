@@ -1,6 +1,8 @@
 #ifndef HTTP_H_
 #define HTTP_H_
 
+#include "dict.h"
+
 #include <stdlib.h>
 
 #define BUFFERSIZE 65535
@@ -20,12 +22,14 @@ struct Host {
 struct HttpRequest {
     char *method;
     char *resource;
+    struct dict *headers;
     size_t content_length;
     char *payload;
 };
 
 struct HttpResponse {
     int status;
+    struct dict *headers;
     size_t content_length;
     char *payload;
 };

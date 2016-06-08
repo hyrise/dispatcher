@@ -9,8 +9,27 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include "dbg.h"
+#include "dict.h"
 
 #define MAXPENDING 20
+
+
+
+const char *dict_get_case(const struct dict *d, const char *key) {
+    if (d == NULL)
+        return NULL;
+
+    struct dict_item *current_item = d->head;
+    while (current_item != NULL) {
+        if (!strcasecmp(current_item->key, key))
+            return current_item->value;     // found -> return
+        current_item = current_item->next;
+    }
+    return NULL;
+}
+
+
+
 
 
 int http_open_connection(const char *url, int port) {
@@ -94,13 +113,18 @@ int http_read_line(int sockfd, char **line) {
             }
         }
         buf_offset += recv_size;
-    }//TODO
+    }
     free(buf);
     if (*line != NULL) {
         debug("Receive line: %s", *line);
         return 0;
     }
-    log_err("Received no crlf indicating end of line.");
+    debug("Received no crlf indicating end of line.");
+    if (recv_size == 0) {
+        log_err("Read EOF.");
+    } else {
+        log_err("Error on read");
+    }
     return -1;
 }
 
@@ -193,6 +217,7 @@ struct HttpRequest *http_receive_request(int sockfd) {
     int content_length = -1;
     char *payload = NULL;
     struct HttpRequest *request = NULL;
+    struct dict *headers = dict_create();
 
     if (http_read_line(sockfd, &line) == -1) {
         goto error;
@@ -217,9 +242,12 @@ struct HttpRequest *http_receive_request(int sockfd) {
             goto error;
         }
         free(line);
-        if (strcasecmp(field_name, "Content-Length") == 0) {
-            content_length = atoi(field_value);
-        }
+        dict_set(headers, field_name, field_value);
+    }
+
+    const char *l = dict_get_case(headers, "Content-Length");
+    if (l != 0) {
+        content_length = atoi(l);
     }
 
     if (content_length == -1 || content_length == 0) {
@@ -247,12 +275,14 @@ struct HttpRequest *http_receive_request(int sockfd) {
     check_mem(request);
     request->method = method;
     request->resource = resource;
+    request->headers = headers;
     request->content_length = content_length;
     request->payload = payload;
 
     return request;
 
 error:
+    dict_free(headers); //TODO free entries
     free(method);
     free(resource);
     free(payload);
@@ -265,6 +295,7 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
     debug("HttpResponseFromEndpoint");
     char *line = NULL;
     int status = 0;
+    struct dict *headers = dict_create();
     int content_length = -1;
     char *payload = NULL;
     struct HttpResponse *response = NULL;
@@ -291,9 +322,13 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
             goto error;
         }
         free(line);
-        if (strcasecmp(field_name, "Content-Length") == 0) {
-            content_length = atoi(field_value);
-        }
+
+        dict_set(headers, field_name, field_value);
+    }
+
+    const char *l = dict_get_case(headers, "Content-Length");
+    if (l != 0) {
+        content_length = atoi(l);
     }
 
     if (content_length == -1 || content_length == 0) {
@@ -325,12 +360,14 @@ struct HttpResponse *HttpResponseFromEndpoint(int sockfd) {
     response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
     check_mem(response);
     response->status = status;
+    response->headers = headers;
     response->content_length = content_length;
     response->payload = payload;
 
     return response;
 
 error:
+    free(headers);
     free(payload);
     free(line);
     return NULL;
@@ -367,7 +404,6 @@ const char *http_reason_phrase(int response_status) {
 
 int http_send_request(int sockfd, struct HttpRequest *request) {
     char http_post[] = "POST %s HTTP/1.1\r\n\
-Connection: close\r\n\
 Content-Length: %d\r\n\r\n\
 %s";
 
@@ -418,11 +454,13 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
 
 
 void HttpRequest_free(struct HttpRequest *request) {
+    debug("http request free");
     if (request == NULL) {
         return;
     }
     free(request->method);
     free(request->resource);
+    dict_free(request->headers);
     free(request->payload);
     free(request);
 }
@@ -432,6 +470,7 @@ void HttpResponse_free(struct HttpResponse *response) {
     if (response == NULL) {
         return;
     }
+    dict_free(response->headers);
     free(response->payload);
     free(response);
 }
