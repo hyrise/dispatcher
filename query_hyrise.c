@@ -4,9 +4,12 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <unistd.h>
 
-#define THREADS 20
-#define QUERIES 100
+#include "dbg.h"
+
+#define THREADS 4
+int num_queries = 1;
 
 #define BUFFER_SIZE 16384
 
@@ -24,32 +27,51 @@ struct query_hyrise_arg {
 void *query_hyrise(void *arg) {
     int i;
     int error_counter = 0;
+    int success_counter = 0;
     struct query_hyrise_arg *qha = (struct query_hyrise_arg *)arg;
-    for (i = 0; i < QUERIES/THREADS; ++i) {
-        struct HttpResponse *response = executeRequest(qha->host, qha->request);
-        if (response != NULL) {
-            printf("%d ---------------------------------------\n %s\n", i, response->payload);
+
+    int socket = http_open_connection(qha->host->url, qha->host->port);
+    struct HttpResponse *response;
+
+    for (i = 0; i < num_queries/THREADS; ++i) {
+        if (http_send_request(socket, qha->request) != 0) {
+            printf("Error on send request\n");
+        }
+
+        int http_error = http_receive_response(socket, &response);
+        if (http_error != HTTP_SUCCESS) {
+            debug("http error on response %d\n", http_error);
+            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
+                debug("Unexpected Connection close. Retry..");
+                i -= 1;
+                close(socket);
+                socket = http_open_connection(qha->host->url, qha->host->port);
+                continue;
+            }
+            error_counter += 1;
+            exit(-1);
+        } else {
+            debug("Received: %s", response->payload);
+            success_counter += 1;
             HttpResponse_free(response);
         }
-        else {
-            error_counter += 1;
-            continue;
-        }
     }
-    printf("Errors: %d\n", error_counter);
+    close(socket);
+    printf("Errors: %d\nSuccesses: %d\n", error_counter, success_counter);
     return NULL;
 }
 
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
-        printf("USAGE: ./start_dispatcher PORT HOST FILE\n");
+    if (argc != 5) {
+        printf("USAGE: ./start_dispatcher HOST PORT NUM_QUERIES FILE\n");
         return -1;
     }
 
-    char *port = argv[1];
-    char *url = argv[2];
-    char *file_name = argv[3];
+    char *url = argv[1];
+    char *port = argv[2];
+    num_queries = atoi(argv[3]);
+    char *file_name = argv[4];
 
     char query[BUFFER_SIZE];
 
@@ -82,7 +104,6 @@ int main(int argc, char *argv[]) {
     arg.host = &h;
     arg.request = &r;
 
-
     int i;
     pthread_t threads[THREADS];
     struct timeval query_start, query_end;
@@ -95,7 +116,7 @@ int main(int argc, char *argv[]) {
         pthread_join(threads[i], NULL);
     }
     gettimeofday(&query_end, NULL);
-    printf("%f queries/s\n", (QUERIES * 1000 * 1000.0)/timediff(query_start, query_end));
+    printf("%f queries/s\n", (num_queries * 1000 * 1000.0)/timediff(query_start, query_end));
 
     return 0;
 }

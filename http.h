@@ -11,6 +11,14 @@
 #define FALSE 0
 
 
+
+#define HTTP_SUCCESS 0
+#define ERR_EOF -2
+#define ERR_BROKEN_PIPE -3
+#define ERR_CONNECTION_RESET -4
+
+
+
 struct Host {
     char *url;
     int port;
@@ -37,13 +45,13 @@ struct HttpResponse {
 
 int http_create_inet_socket(const char *port);
 int http_open_connection(const char *url, int port);
-struct HttpRequest *http_receive_request(int sock);
+int http_receive_request(int sockfd, struct HttpRequest **received_request);
 struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
 int http_send_request(int sockfd, struct HttpRequest *request);
 int http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);
 void HttpResponse_free(struct HttpResponse *response);
 
-struct HttpResponse *HttpResponseFromEndpoint(int sockfd);
+int http_receive_response(int sockfd, struct HttpResponse **received_response);
 
 #endif

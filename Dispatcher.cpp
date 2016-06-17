@@ -126,8 +126,9 @@ void Dispatcher::dispatch_requests(int id) {
         debug("New request: Handled by thread %i", id);
 
         // Allocates memory for the request
-        struct HttpRequest *request = http_receive_request(tcp_request->socket);
-        if (request == NULL) {
+        struct HttpRequest *request;
+        int http_error = http_receive_request(tcp_request->socket, &request);
+        if (http_error != HTTP_SUCCESS) {
             debug("Invalid Http request.");
             // TODO send error msg to client
             close(tcp_request->socket);
