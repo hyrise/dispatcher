@@ -23,9 +23,6 @@ extern "C"
 #define MAXPENDING 10
 
 
-void Request_free(struct Request *request) {
-    free(request);
-}
 
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
     dispatcher->dispatch_requests(id);
@@ -111,7 +108,7 @@ void Dispatcher::dispatch_requests(int id) {
 
     while (1) {
         // Get an request out of the request queue
-        struct Request *tcp_request;
+        int socket;
         debug("Try to lock %d", id);
         {
             std::unique_lock<std::mutex> lck(request_queue_mutex);
@@ -119,7 +116,7 @@ void Dispatcher::dispatch_requests(int id) {
                 debug("Wait %d", id);
                 request_queue_empty.wait(lck);
             };
-            tcp_request = request_queue.front();
+            socket = request_queue.front();
             request_queue.pop();
             debug("Unlock %d", id);
         }
@@ -128,13 +125,12 @@ void Dispatcher::dispatch_requests(int id) {
 
         // Allocates memory for the request
         struct HttpRequest *request;
-        int http_error = http_receive_request(tcp_request->socket, &request);
+        int http_error = http_receive_request(socket, &request);
         if (http_error != HTTP_SUCCESS) {
             debug("Invalid Http request.");
             assert(request == NULL);
             // TODO send error msg to client
-            close(tcp_request->socket);
-            Request_free(tcp_request);
+            close(socket);
             continue;
         }
         debug("Request payload: %s", request->payload);
@@ -142,8 +138,7 @@ void Dispatcher::dispatch_requests(int id) {
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             struct sockaddr addr;
             socklen_t addrlen = sizeof(struct sockaddr);
-            if (getpeername(tcp_request->socket, &addr, &addrlen) != 0) {
-                log_err("/add_node/ - getpeername()");
+            if (getpeername(socket, &addr, &addrlen) == 0) {
                 if (addr.sa_family == AF_INET || addr.sa_family == AF_UNSPEC) {
                     struct sockaddr_in *sa = (struct sockaddr_in *)&addr;
                     char ip[INET_ADDRSTRLEN];
@@ -159,11 +154,12 @@ void Dispatcher::dispatch_requests(int id) {
                 } else {
                     debug("Cannot add host: Unsupported Address family %d", addr.sa_family);
                 }
+            } else {
+                log_err("/add_node/ - getpeername()");
             }
 
             HttpRequest_free(request);
-            close(tcp_request->socket);
-            Request_free(tcp_request);
+            close(socket);
 
         } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
             char *delimiter = strchr(request->resource, ':');
@@ -175,34 +171,32 @@ void Dispatcher::dispatch_requests(int id) {
             }
 
             HttpRequest_free(request);
-            close(tcp_request->socket);
-            Request_free(tcp_request);
+            close(socket);
 
         } else if (strcmp(request->resource, "/node_info") == 0) {
-            sendNodeInfo(request, tcp_request->socket);
+            sendNodeInfo(request, socket);
 
             HttpRequest_free(request);
-            close(tcp_request->socket);
-            Request_free(tcp_request);
+            close(socket);
 
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = queryType(request->payload);
             switch(query_t) {
                 case READ:
-                    distributor->distribute(request, tcp_request->socket);
+                    distributor->distribute(request, socket);
                     break;
                 case LOAD:
-                    sendToAll(request, tcp_request->socket);
+                    sendToAll(request, socket);
                     break;
                 case WRITE:
-                    distributor->sendToMaster(request, tcp_request->socket);
+                    distributor->sendToMaster(request, socket);
                     break;
                 default:
                     log_err("Invalid query: %s", request->payload);
                     throw "Invalid query.";
             }
         } else if (strcmp(request->resource, "/procedure") == 0) {
-            distributor->sendToMaster(request, tcp_request->socket);
+            distributor->sendToMaster(request, socket);
         } else {
             log_err("Invalid HTTP resource: %s", request->resource);
             exit(1);
@@ -337,11 +331,8 @@ void Dispatcher::start() {
 
     // Disptach requests
     while(1) {
-        // Allocates memory for request
-        struct Request *request = new struct Request();
-        request->addrlen = sizeof(request->addr);
-        request->socket = accept(socket, &(request->addr), &(request->addrlen));
-        if (request->socket < 0) {
+        int new_socket = accept(socket, NULL, NULL);
+        if (new_socket < 0) {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
@@ -349,7 +340,7 @@ void Dispatcher::start() {
         {
             std::unique_lock<std::mutex> lck(request_queue_mutex);
             debug("Main: push to request_queue.");
-            request_queue.push(request);
+            request_queue.push(new_socket);
             request_queue_empty.notify_one();
         }
     }

@@ -17,17 +17,9 @@
 #define WRITE 1
 #define LOAD 2
 
-struct Request {
-    int socket;
-    struct sockaddr addr;
-    socklen_t addrlen;
-};
-
-void Request_free(struct Request *request);
-
 class Dispatcher {
 private:
-    std::queue<struct Request*> request_queue;
+    std::queue<int> request_queue;
     std::mutex request_queue_mutex;
     std::condition_variable request_queue_empty;
 
