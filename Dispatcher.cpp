@@ -183,6 +183,7 @@ void Dispatcher::dispatch_requests(int id) {
             distributor->sendToMaster(request, tcp_request->socket);
         } else {
             log_err("Invalid HTTP resource: %s", request->resource);
+            exit(1);
         }
         // cleanup
         Request_free(tcp_request);
@@ -201,7 +202,7 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     char tmp_node_info_entry[256];
     for (struct Host *host : *cluster_nodes) {
         int i = snprintf(tmp_node_info_entry, 256, "{\"ip\": \"%s\", \"total_queries\": %d, \"total_time\": %d},", host->url, host->total_queries, host->total_time);
-        if (i > 256) {
+        if (i > 256) { // TODO
             log_err("node info to large for buffer");
         }
         strncpy(current_position, tmp_node_info_entry, strlen(tmp_node_info_entry));

@@ -31,6 +31,31 @@ const char *dict_get_case(const struct dict *d, const char *key) {
 
 
 
+ssize_t send_all(int socket, const void *buffer, size_t length, int flags) {
+    ssize_t offset = 0;
+    ssize_t sent_bytes = 0;
+    while ((sent_bytes = send(socket, buffer + offset, length - offset, flags)) > 0) {
+        offset += sent_bytes;
+    }
+
+    return sent_bytes == -1 ? -1 : offset;
+}
+
+
+ssize_t read_all(int socket, void *buffer, size_t length) {
+    ssize_t offset = 0;
+    ssize_t read_bytes = 0;
+    while ((read_bytes = read(socket, buffer + offset, length - offset)) > 0) {
+        offset += read_bytes;
+    }
+    if (read_bytes == 0 && offset < length) {
+        return 0;
+    }
+
+    return read_bytes == -1 ? -1 : offset;
+}
+
+
 
 
 int http_open_connection(const char *url, int port) {
@@ -53,8 +78,6 @@ int http_open_connection(const char *url, int port) {
         log_err("ERROR: could not connect to host.");
         exit(-1);
     }
-    int set = 1;
-    setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 
     return sock;
 }
@@ -247,21 +270,17 @@ int http_receive_headers(int sockfd, struct dict *headers) {
 int http_receive_payload(int sockfd, char **payload, int content_length) {
     *payload = NULL;
     ssize_t recv_size = 0;
-    size_t payload_offset = 0;
-
     *payload = (char *)calloc(sizeof(char), content_length + 1);
     check_mem(payload);
-    while ((recv_size = read(sockfd, (*payload) + payload_offset, content_length-payload_offset)) > 0) {
-        payload_offset += recv_size;
-    }
-    if (recv_size == 0) {
-        if (content_length - payload_offset == 0) {
-            debug("Read complete Http payload.");
-        } else {
-            log_err("End of TCP stream.");
+
+    recv_size = read_all(sockfd, *payload, content_length);
+
+    if (recv_size == content_length) {
+        debug("Read complete Http payload.");
+    } else if (recv_size == 0) {
+        log_err("End of TCP stream.");
             return ERR_EOF;
-        }
-    } else if (recv_size == -1) {
+    } else {
         log_err("Error while reading TCP stream.");
          // TODO handle
         exit(-1);
@@ -436,7 +455,7 @@ Content-Length: %d\r\n\r\n\
         exit(-1);
     }
     ssize_t sent_bytes;
-    if ((sent_bytes = send(sockfd, buf, strlen(buf), 0)) == -1) {
+    if ((sent_bytes = send_all(sockfd, buf, strlen(buf), 0)) == -1) {
         log_err("Send request. %zd", sent_bytes);
         free(buf);
         exit(-1);
@@ -463,7 +482,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
         log_err("An error occurred while creating response.");
         // TODO
         const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
-        if (send(sockfd, error_response, strlen(error_response), 0) == -1) {
+        if (send_all(sockfd, error_response, strlen(error_response), 0) == -1) {
             if (errno == EPIPE) {
                 return ERR_BROKEN_PIPE;
             }
@@ -472,7 +491,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
         };
     }
     else {
-        if (send(sockfd, buf, strlen(buf), 0) == -1) {
+        if (send_all(sockfd, buf, strlen(buf), 0) == -1) {
             free(buf);
             if (errno == EPIPE) {
                 return ERR_BROKEN_PIPE;
