@@ -53,6 +53,7 @@ void RoundRobinDistributor::execute() {
 
         debug("Close client socket.");
         close(request_tuple->socket);
+        HttpRequest_free(request_tuple->request);
         free(request_tuple);
     }
 }

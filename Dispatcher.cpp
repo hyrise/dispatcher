@@ -18,6 +18,7 @@ extern "C"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <assert.h>
 
 #define MAXPENDING 10
 
@@ -130,6 +131,7 @@ void Dispatcher::dispatch_requests(int id) {
         int http_error = http_receive_request(tcp_request->socket, &request);
         if (http_error != HTTP_SUCCESS) {
             debug("Invalid Http request.");
+            assert(request == NULL);
             // TODO send error msg to client
             close(tcp_request->socket);
             Request_free(tcp_request);
@@ -138,21 +140,31 @@ void Dispatcher::dispatch_requests(int id) {
         debug("Request payload: %s", request->payload);
 
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
-            if (tcp_request->addr.sa_family == AF_INET || tcp_request->addr.sa_family == AF_UNSPEC) {
-                struct sockaddr_in *addr = (struct sockaddr_in *)&(tcp_request->addr);
-                char ip[INET_ADDRSTRLEN];
-                if (inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN) == NULL) {
-                    log_err("/add_node/ - Converting network address to string");
+            struct sockaddr addr;
+            socklen_t addrlen = sizeof(struct sockaddr);
+            if (getpeername(tcp_request->socket, &addr, &addrlen) != 0) {
+                log_err("/add_node/ - getpeername()");
+                if (addr.sa_family == AF_INET || addr.sa_family == AF_UNSPEC) {
+                    struct sockaddr_in *sa = (struct sockaddr_in *)&addr;
+                    char ip[INET_ADDRSTRLEN];
+                    if (inet_ntop(AF_INET, &(sa->sin_addr), ip, INET_ADDRSTRLEN) == NULL) {
+                        log_err("/add_node/ - Converting network address to string");
+                    }
+                    int port = (int)strtol(request->resource+10, (char **)NULL, 10);
+                    if (port == 0) {
+                        log_err("/add_node/ - Detecting port");
+                    }
+                    debug("Add host:  %s:%i", ip, port);
+                    add_host(ip, port);
+                } else {
+                    debug("Cannot add host: Unsupported Address family %d", addr.sa_family);
                 }
-                int port = (int)strtol(request->resource+10, (char **)NULL, 10);
-                if (port == 0) {
-                    log_err("/add_node/ - Detecting port");
-                }
-                debug("Add host:  %s:%i", ip, port);
-                add_host(ip, port);
-            } else {
-                debug("Cannot add host: Unsupported Address family %d", tcp_request->addr.sa_family);
             }
+
+            HttpRequest_free(request);
+            close(tcp_request->socket);
+            Request_free(tcp_request);
+
         } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
             char *delimiter = strchr(request->resource, ':');
             if (delimiter != NULL) {
@@ -161,8 +173,18 @@ void Dispatcher::dispatch_requests(int id) {
                 remove_host(ip, port);
                 free(ip);
             }
+
+            HttpRequest_free(request);
+            close(tcp_request->socket);
+            Request_free(tcp_request);
+
         } else if (strcmp(request->resource, "/node_info") == 0) {
             sendNodeInfo(request, tcp_request->socket);
+
+            HttpRequest_free(request);
+            close(tcp_request->socket);
+            Request_free(tcp_request);
+
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = queryType(request->payload);
             switch(query_t) {
@@ -185,8 +207,6 @@ void Dispatcher::dispatch_requests(int id) {
             log_err("Invalid HTTP resource: %s", request->resource);
             exit(1);
         }
-        // cleanup
-        Request_free(tcp_request);
     }
 }
 
@@ -218,7 +238,6 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     http_send_response(sock, response);
     free(node_info);
     free(response);
-    close(sock);
 }
 
 

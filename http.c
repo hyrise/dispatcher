@@ -443,7 +443,7 @@ const char *http_reason_phrase(int response_status) {
 
 
 int http_send_request(int sockfd, struct HttpRequest *request) {
-    debug("http_send_response");
+    debug("http_send_request");
     char http_post[] = "POST %s HTTP/1.1\r\n\
 Content-Length: %d\r\n\r\n\
 %s";
