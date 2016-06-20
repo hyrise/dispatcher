@@ -456,10 +456,13 @@ Content-Length: %d\r\n\r\n\
     }
     ssize_t sent_bytes;
     if ((sent_bytes = send_all(sockfd, buf, strlen(buf), 0)) == -1) {
-        log_err("Send request. %zd", sent_bytes);
         free(buf);
+        if (errno == EPIPE) {
+            return ERR_BROKEN_PIPE;
+        }
+        log_err("Send request.");
         exit(-1);
-    };
+    }
     if (sent_bytes != strlen(buf)) {
         debug("WARNING: send was short. %zd of %lu bytes", sent_bytes, strlen(buf));
     }
@@ -488,7 +491,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
             }
             log_err("Send response.");
             exit(-1);
-        };
+        }
     }
     else {
         if (send_all(sockfd, buf, strlen(buf), 0) == -1) {
@@ -498,7 +501,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
             }
             log_err("Send response.");
             exit(-1);
-        };
+        }
         free(buf);
     }
     return 0;

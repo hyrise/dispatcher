@@ -19,6 +19,7 @@ extern "C"
 #include <netinet/in.h>
 #include <string.h>
 #include <assert.h>
+#include <signal.h>
 
 #define MAXPENDING 10
 
@@ -319,6 +320,7 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
 
 
 void Dispatcher::start() {
+    signal(SIGPIPE, SIG_IGN);
     debug("Start dispatcher");
     // Start parser threads
     for (int i = 0; i < thread_pool_size; ++i) {

@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include "dbg.h"
 
@@ -40,7 +41,7 @@ void *query_hyrise(void *arg) {
 
         int http_error = http_receive_response(socket, &response);
         if (http_error != HTTP_SUCCESS) {
-            debug("http error on response %d\n", http_error);
+            log_err("http error on response %d\n", http_error);
             if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
                 debug("Unexpected Connection close. Retry..");
                 i -= 1;
@@ -63,6 +64,7 @@ void *query_hyrise(void *arg) {
 
 
 int main(int argc, char *argv[]) {
+    signal(SIGPIPE, SIG_IGN);
     if (argc != 5) {
         printf("USAGE: ./start_dispatcher HOST PORT NUM_QUERIES FILE\n");
         return -1;
