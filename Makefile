@@ -5,7 +5,10 @@ CFLAGS = -Wall -g -O3
 LDLIBS = -lpthread
 INCLUDEPATHS = ./jsoncpp
 
-all: start_dispatcher hyrise_mock query_hyrise dict_test
+all: start_dispatcher hyrise_mock query_hyrise dict_test simple_dispatcher
+
+simple_dispatcher: http.o simple_dispatcher.c
+	cc http.o dict.o simple_dispatcher.c -o simple_dispatcher $(CFLAGS) $(LDLIBS)
 
 start_dispatcher : $(OBJS) http.o main.cpp
 	$(CXX) main.cpp $(OBJS) dict.o http.o -o start_dispatcher $(CXXFLAGS) $(LDLIBS)
