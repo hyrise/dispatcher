@@ -9,30 +9,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define NUM_THREADS 5
-
-
-static pthread_mutex_t request_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-struct request {
-    int socket_fd;
-    STAILQ_ENTRY(request) requests;
-};
 
 
 int start_hyrise_mock(const char *port) {
 
-    // for (int i = 0; i < NUM_THREADS; ++i) {
-    //     dispatch_requests, this, i);
-    // }
-
-    // create dispatcher socket
+    // create socket
     int socket = http_create_inet_socket(port);
     debug("Hyrise mock: Listening on port %s", port);
 
-    STAILQ_HEAD(slisthead, request) head = STAILQ_HEAD_INITIALIZER(head);
-    //struct slisthead *headp;
-    STAILQ_INIT(&head);
 
     // Disptach requests
     while(1) {
@@ -44,22 +28,20 @@ int start_hyrise_mock(const char *port) {
             log_err("Error: on accept.");
             continue;
         }
-        debug("Main: new request.");
-        {
-            pthread_mutex_lock(&request_queue_mutex);
-            debug("Main: push to request_queue.");
 
-            struct request *r = (struct request *) malloc(sizeof(struct request));
-            r->socket_fd = socket_fd;
+        struct HttpRequest *r;
+        http_receive_request(socket_fd, &r);
+        HttpRequest_free(r);
 
-            STAILQ_INSERT_TAIL(&head, r, requests);
+        struct HttpResponse resp;
 
-            struct request *np;
-            STAILQ_FOREACH(np, &head, requests)
-                printf("%d\n", np->socket_fd);
-            // TODO notify
-            pthread_mutex_unlock(&request_queue_mutex);
-        }
+        resp.status = 200;
+        resp.payload = "Supi";
+        resp.content_length = strlen(resp.payload);
+
+        http_send_response(socket_fd, &resp);
+
+
         close(socket_fd);
     }
     return 0;

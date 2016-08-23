@@ -274,6 +274,7 @@ int http_receive_payload(int sockfd, char **payload, int content_length) {
     check_mem(payload);
 
     recv_size = read_all(sockfd, *payload, content_length);
+    debug("%s", *payload);
 
     if (recv_size == content_length) {
         debug("Read complete Http payload.");
