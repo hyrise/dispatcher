@@ -58,8 +58,6 @@ int main(int argc, char *argv[]) {
     while (1) {
         read_fd_set = active_fd_set;
 
-        
-
         debug("select");
         if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, NULL) < 0) {
             perror ("select");
