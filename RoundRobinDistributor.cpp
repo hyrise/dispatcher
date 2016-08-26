@@ -37,15 +37,30 @@ void RoundRobinDistributor::execute() {
             request_tuple = m_parsedRequests.front();
             m_parsedRequests.pop();
         }
-        
-        host = cluster_nodes->at(request_tuple->host);
-        debug("Request send to host %s:%d", host->url, host->port);
 
-        gettimeofday(&query_start, NULL);
-        response = executeRequest(host, request_tuple->request);
-        gettimeofday(&query_end, NULL);
-        (host->total_queries)++;
-        host->total_time += (unsigned int)timediff(query_start, query_end);
+        // Try all hosts until success
+        for (int i = 0; i < cluster_nodes->size(); i++) {
+            host = cluster_nodes->at((request_tuple->host + i) % cluster_nodes->size());
+            debug("Request send to host %s:%d", host->url, host->port);
+
+            gettimeofday(&query_start, NULL);
+            response = executeRequest(host, request_tuple->request);
+            gettimeofday(&query_end, NULL);
+            if (response != NULL && request_tuple->is_write == false) {
+                (host->total_queries)++;
+                host->total_time += (unsigned int)timediff(query_start, query_end);
+                break;
+            }
+        }
+
+        if (response == NULL) {
+            response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+            check_mem(response);
+            response->status = 500;
+            response->headers = NULL;
+            response->payload = strdup("Database request was not successful.");
+            response->content_length = strlen(response->payload);
+        }
 
         debug("Response to client.");
         http_send_response(request_tuple->socket, response);
@@ -75,6 +90,7 @@ void RoundRobinDistributor::distribute(struct HttpRequest *request, int sock) {
     request_tuple->request = request;
     request_tuple->host = host_id;
     request_tuple->socket = sock;
+    request_tuple->is_write = false;
 
     m_parsedRequests.push(request_tuple);
     m_queue_cv.notify_one();
@@ -89,6 +105,7 @@ void RoundRobinDistributor::sendToMaster(struct HttpRequest *request, int sock) 
     request_tuple->request = request;
     request_tuple->host = 0;
     request_tuple->socket = sock;
+    request_tuple->is_write = true;
 
     m_parsedRequests.push(request_tuple);
     m_queue_cv.notify_one();

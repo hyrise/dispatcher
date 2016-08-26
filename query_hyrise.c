@@ -9,7 +9,7 @@
 
 #include "dbg.h"
 
-#define THREADS 4
+#define THREADS 1
 int num_queries = 1;
 
 #define BUFFER_SIZE 16384
@@ -66,7 +66,7 @@ void *query_hyrise(void *arg) {
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
     if (argc != 5) {
-        printf("USAGE: ./start_dispatcher HOST PORT NUM_QUERIES FILE\n");
+        printf("USAGE: ./query_hyrise HOST PORT NUM_QUERIES FILE\n");
         return -1;
     }
 
