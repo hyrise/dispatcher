@@ -84,7 +84,8 @@ int queryType(char *http_payload) {
 
     if (!query->isObject() || query->isMember("operators") == false) {
         log_err("query content does not contain any operators");
-        throw "query content does not contain any operators";
+        debug("HTTP payload was %s", http_payload);
+        return -1;
     }
     operators = query->get("operators", obj_value);
 
@@ -194,13 +195,31 @@ void Dispatcher::dispatch_requests(int id) {
                     break;
                 default:
                     log_err("Invalid query: %s", request->payload);
-                    throw "Invalid query.";
+                    HttpRequest_free(request);
+
+                    struct HttpResponse *response = new HttpResponse;
+                    response->status = 500;
+                    response->payload = strdup("Invalid query");
+                    response->content_length = strlen(response->payload);
+                    http_send_response(socket, response);
+                    free(response);
+                    close(socket);
             }
         } else if (strcmp(request->resource, "/procedure") == 0) {
             distributor->sendToMaster(request, socket);
         } else {
             log_err("Invalid HTTP resource: %s", request->resource);
-            exit(1);
+
+            struct HttpResponse *response = new HttpResponse;
+            response->status = 404;
+            if (asprintf(&response->payload, "Invalid HTTP resource: %s", request->resource) == -1) {
+                response->payload = strdup("Invalid HTTP resource");
+            }
+            response->content_length = strlen(response->payload);
+            http_send_response(socket, response);
+            HttpRequest_free(request);
+            free(response);
+            close(socket);
         }
     }
 }
