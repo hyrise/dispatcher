@@ -22,7 +22,7 @@ RoundRobinDistributor::RoundRobinDistributor(std::vector<struct Host*> *hosts): 
 RoundRobinDistributor::~RoundRobinDistributor() {};
 
 void RoundRobinDistributor::execute() {
-    struct HttpResponse *response;
+    struct HttpResponse *response = NULL;
     struct Host *host;
     struct timeval query_start, query_end;
 
@@ -38,8 +38,10 @@ void RoundRobinDistributor::execute() {
             m_parsedRequests.pop();
         }
 
+        // TODO: Error on empty list
+
         // Try all hosts until success
-        for (int i = 0; i < cluster_nodes->size(); i++) {
+        for (size_t i = 0; i < cluster_nodes->size(); i++) {
             host = cluster_nodes->at((request_tuple->host + i) % cluster_nodes->size());
             debug("Request send to host %s:%d", host->url, host->port);
 
