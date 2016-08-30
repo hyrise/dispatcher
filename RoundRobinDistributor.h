@@ -34,6 +34,7 @@ private:
         struct HttpRequest *request;
         int host;
         int socket;
+        bool is_write;
     };
     std::queue<struct RequestTuple*> m_parsedRequests;
 };

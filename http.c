@@ -62,9 +62,9 @@ int http_open_connection(const char *url, int port) {
     int sock;
     struct sockaddr_in dest;
 
-    if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         log_err("ERROR: could not create a socket.");
-        exit(-1);
+        return -1;
     }
 
     //---Initialize server address/port struct
@@ -74,9 +74,9 @@ int http_open_connection(const char *url, int port) {
     dest.sin_port = htons(port);
 
     //---Connect to server
-    if ( connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
+    if (connect(sock, (struct sockaddr*)&dest, sizeof(dest)) != 0) {
         log_err("ERROR: could not connect to host.");
-        exit(-1);
+        return -1;
     }
 
     return sock;
@@ -475,7 +475,7 @@ Content-Length: %d\r\n\r\n\
 
 int http_send_response(int sockfd, struct HttpResponse *response) {
     debug("http_send_response");
-    int status = (response != NULL) ? response->status : 200;
+    int status = (response != NULL) ? response->status : 500;
     int content_length = (response != NULL) ? response->content_length : 0;
     const char *payload = (response != NULL) ? response->payload : "";
 
@@ -523,6 +523,7 @@ void HttpRequest_free(struct HttpRequest *request) {
 
 
 void HttpResponse_free(struct HttpResponse *response) {
+    debug("http response free");
     if (response == NULL) {
         return;
     }
