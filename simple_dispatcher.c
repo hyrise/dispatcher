@@ -13,7 +13,6 @@
 char *strnstr(const char *s1, const char *s2, size_t len)
 {
 	size_t l2;
-
 	l2 = strlen(s2);
 	if (!l2)
 		return (char *)s1;
@@ -52,7 +51,7 @@ int main(int argc, char *argv[]) {
 
     fd_set active_fd_set, read_fd_set;
 
-    int socket =  http_create_inet_socket(port);
+    int dispatcher_socket =  http_create_inet_socket(port);
     int db_s1 = http_open_connection("192.168.31.38", 5000);
     //int db_s2 = http_open_connection("192.168.31.38", 5001);
 
@@ -63,7 +62,7 @@ int main(int argc, char *argv[]) {
 
     /* Initialize the set of active sockets. */
     FD_ZERO (&active_fd_set);
-    FD_SET (socket, &active_fd_set);
+    FD_SET (dispatcher_socket, &active_fd_set);
     FD_SET (db_s1, &active_fd_set);
     //FD_SET (db_s2, &active_fd_set);
 
@@ -85,11 +84,11 @@ int main(int argc, char *argv[]) {
         socklen_t size;
         for (i = 0; i < FD_SETSIZE; ++i) {
             if (FD_ISSET (i, &read_fd_set)) {
-                if (i == socket) {
+                if (i == dispatcher_socket) {
                     /* Connection request on original socket. */
                     int new;
                     size = sizeof (clientname);
-                    new = accept (socket,
+                    new = accept (dispatcher_socket,
                                   (struct sockaddr *) &clientname,
                                   &size);
                     if (new < 0) {

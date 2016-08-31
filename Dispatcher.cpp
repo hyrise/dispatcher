@@ -25,6 +25,29 @@ extern "C"
 
 
 
+int getIpFromSocket(int sockfd, char* ipstr) {
+    debug("getIpFromSocket");
+    // TODO: IPv6 Support
+    struct sockaddr addr;
+    socklen_t addrlen = sizeof(struct sockaddr);
+    if (getpeername(sockfd, &addr, &addrlen) == 0) {
+        if (addr.sa_family == AF_INET || addr.sa_family == AF_UNSPEC) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)&addr;
+            if (inet_ntop(AF_INET, &(sa->sin_addr), ipstr, INET_ADDRSTRLEN) == NULL) {
+                log_err("/add_node/ - Converting network address to string");
+                return -1;
+            }
+        } else {
+            log_err("Cannot add host: Unsupported Address family %d", addr.sa_family);
+            return -1;
+        }
+    } else {
+        log_err("Error on getpeername");
+    }
+    return 0;
+}
+
+
 void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
     dispatcher->dispatch_requests(id);
 }
@@ -138,28 +161,17 @@ void Dispatcher::dispatch_requests(int id) {
         debug("Request payload: %s", request->payload);
 
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
-            struct sockaddr addr;
-            socklen_t addrlen = sizeof(struct sockaddr);
-            if (getpeername(socket, &addr, &addrlen) == 0) {
-                if (addr.sa_family == AF_INET || addr.sa_family == AF_UNSPEC) {
-                    struct sockaddr_in *sa = (struct sockaddr_in *)&addr;
-                    char ip[INET_ADDRSTRLEN];
-                    if (inet_ntop(AF_INET, &(sa->sin_addr), ip, INET_ADDRSTRLEN) == NULL) {
-                        log_err("/add_node/ - Converting network address to string");
-                    }
-                    int port = (int)strtol(request->resource+10, (char **)NULL, 10);
-                    if (port == 0) {
-                        log_err("/add_node/ - Detecting port");
-                    }
+            char ip[INET_ADDRSTRLEN];
+            int port;
+            if (getIpFromSocket(socket, ip) == 0) {
+                port = (int)strtol(request->resource+10, (char **)NULL, 10);
+                if (port == 0) {
+                    log_err("/add_node/ - Detecting port");
+                } else {
                     debug("Add host:  %s:%i", ip, port);
                     add_host(ip, port);
-                } else {
-                    debug("Cannot add host: Unsupported Address family %d", addr.sa_family);
                 }
-            } else {
-                log_err("/add_node/ - getpeername()");
             }
-
             HttpRequest_free(request);
             close(socket);
 
@@ -177,7 +189,21 @@ void Dispatcher::dispatch_requests(int id) {
 
         } else if (strcmp(request->resource, "/node_info") == 0) {
             sendNodeInfo(request, socket);
+            HttpRequest_free(request);
+            close(socket);
 
+        } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            int port;
+            if (getIpFromSocket(socket, ip) == 0) {
+                port = (int)strtol(request->resource+12, (char **)NULL, 10);
+                if (port == 0) {
+                    log_err("/new_master/ - Detecting port");
+                } else {
+                    debug("New master:  %s:%i", ip, port);
+                    set_master(ip, port);
+                }
+            }
             HttpRequest_free(request);
             close(socket);
 
@@ -373,6 +399,26 @@ void Dispatcher::shut_down() {
     for (auto& th : parser_thread_pool) {
         th.join();
     }
+}
+
+void Dispatcher::set_master(const char *url, int port) {
+    // TODO: Do not reset queries and time
+    remove_host(url, port);
+
+    cluster_nodes_mutex.lock();
+    struct Host *old_master = cluster_nodes->front();
+    free(old_master->url);
+    free(old_master);
+
+    struct Host *h = new struct Host;
+    h->port = port;
+    h->url = strdup(url);
+    h->total_queries = 0;
+    h->total_time = 0;
+    cluster_nodes->at(0) = h;
+
+    cluster_nodes_mutex.unlock();
+    debug("New master: %s:%d\n", h->url, h->port);
 }
 
 

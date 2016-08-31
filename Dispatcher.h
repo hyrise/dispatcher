@@ -44,6 +44,7 @@ public:
     void dispatch_requests(int id);
     void start();
     void shut_down();
+    void set_master(const char *url, int port);
     void add_host(const char *url, int port);
     void remove_host(const char *url, int port);
 };
