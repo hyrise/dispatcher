@@ -341,7 +341,7 @@ int http_receive_request(int sockfd, struct HttpRequest **received_request) {
     return HTTP_SUCCESS;
 
 error:
-    dict_free(headers); //TODO free entries
+    dict_free(headers);
     free(method);
     free(resource);
     free(payload);
@@ -401,7 +401,7 @@ int http_receive_response(int sockfd, struct HttpResponse **received_response) {
     return HTTP_SUCCESS;
 
 error:
-    free(headers);
+    dict_free(headers);
     free(payload);
     free(line);
     return http_error;
@@ -469,7 +469,7 @@ Content-Length: %d\r\n\r\n\
     }
     debug("SEND\n%s\n", buf);
     free(buf);
-    return 0;
+    return HTTP_SUCCESS;
 }
 
 

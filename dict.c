@@ -4,7 +4,6 @@
 #include <string.h>
 
 
-
 struct dict *dict_create() {
     struct dict *d = (struct dict*)malloc(sizeof(struct dict));
     d->head = NULL;
@@ -21,6 +20,8 @@ void dict_free(struct dict *d) {
     while (head != NULL) {
         tmp = head;
         head = head->next;
+        free(tmp->key);
+        free(tmp->value);
         free(tmp);
     }
     free(d);
@@ -41,7 +42,7 @@ int dict_has(const struct dict *d, const char *key) {
 }
 
 
-const char *dict_get(const struct dict *d, const char *key) {
+char *dict_get(const struct dict *d, const char *key) {
     if (d == NULL)
         return NULL;
 
@@ -56,6 +57,7 @@ const char *dict_get(const struct dict *d, const char *key) {
 
 
 int dict_del(struct dict *d, const char * key) {
+    //TODO free string
     if (d == NULL)
         return -1;
 
@@ -79,7 +81,7 @@ int dict_del(struct dict *d, const char * key) {
     return -1;
 }
 
-int dict_set(struct dict *d, const char *key, const char *val) {
+int dict_set(struct dict *d, char *key, char *val) {
     if (d == NULL)
         return -1;
 

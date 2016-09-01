@@ -66,7 +66,6 @@ int main(int argc, char *argv[]) {
     FD_SET (db_s1, &active_fd_set);
     //FD_SET (db_s2, &active_fd_set);
 
-    int client = -1;
     int session_to_socket[FD_SETSIZE];
 
     while (1) {
@@ -100,13 +99,11 @@ int main(int argc, char *argv[]) {
                              inet_ntoa (clientname.sin_addr),
                              ntohs (clientname.sin_port));
                     FD_SET (new, &active_fd_set);
-                    client = new;
                 } else {
                     /* Data arriving on an already-connected socket. */
 
                     if (i == db_s1) {
                         debug("Server response");
-                        //assert(client != -1);
                         struct HttpResponse *received_response;
                         int rc = http_receive_response(i, &received_response);
                         if (rc != HTTP_SUCCESS) {

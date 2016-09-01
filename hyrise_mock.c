@@ -11,12 +11,11 @@
 
 
 
-int start_hyrise_mock(const char *port) {
+void start_hyrise_mock(const char *port) {
 
     // create socket
     int socket = http_create_inet_socket(port);
     debug("Hyrise mock: Listening on port %s", port);
-
 
     // Disptach requests
     while(1) {
@@ -33,18 +32,16 @@ int start_hyrise_mock(const char *port) {
         http_receive_request(socket_fd, &r);
         HttpRequest_free(r);
 
-        struct HttpResponse resp;
 
+        struct HttpResponse resp;
         resp.status = 200;
         resp.payload = "Supi";
         resp.content_length = strlen(resp.payload);
 
         http_send_response(socket_fd, &resp);
 
-
         close(socket_fd);
     }
-    return 0;
 }
 
 
