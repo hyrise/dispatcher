@@ -480,7 +480,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
     const char *payload = (response != NULL) ? response->payload : "";
 
     char *buf;
-    char http_response[] = "HTTP/1.1 %d %s\r\nContent-Length: %d\r\n\r\n%s";
+    char http_response[] = "HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s";
     if (asprintf(&buf, http_response, status, http_reason_phrase(status),
                  content_length, payload) == -1) {
         log_err("An error occurred while creating response.");

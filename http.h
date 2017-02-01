@@ -2,6 +2,8 @@
 #define HTTP_H_
 
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/uio.h>
 #include "dict.h"
 
 
@@ -40,6 +42,8 @@ struct HttpResponse {
     char *payload;
 };
 
+ssize_t send_all(int socket, const void *buffer, size_t length, int flags);
+ssize_t read_all(int socket, void *buffer, size_t length);
 
 int http_create_inet_socket(const char *port);
 int http_open_connection(const char *url, int port);
