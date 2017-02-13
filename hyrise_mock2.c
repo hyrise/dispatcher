@@ -1,11 +1,13 @@
 #include "http.h"
 #include "dbg.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <sys/queue.h>
 #include <sys/types.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -13,22 +15,22 @@
 #include <arpa/inet.h>
 
 
-int db_s1;
+#define CLIENT_CONNECTION 0
+#define DB_CONNECTION 1
 
 
 struct connection {
+    int type;
+    int corresponding_socket;
     char buffer[BUFFERSIZE];
     int buffer_offset;
 };
 
 
 
-int get_DB_connection() {
-    return db_s1;
-}
 
 
-void start_hyrise_mock(const char *port) {
+void start_dispatcher(const char *port) {
 
     // create socket
     int dispatcher_socket = http_create_inet_socket(port);
@@ -40,16 +42,7 @@ void start_hyrise_mock(const char *port) {
     FD_SET (dispatcher_socket, &active_fd_set);
 
 
-    struct connection *conns[FD_SIZE] = {NULL};
-
-    int DB_connections[FD_SIZE];
-    int j;
-    for (j = 0; j < FD_SIZE; j++) {
-        DB_connections[j] = -1;
-    }
-
-    int db_s1 = http_open_connection("192.168.31.38", 5000);
-    FD_SET (db_s1, &active_fd_set);
+    struct connection *conns[FD_SETSIZE] = {NULL};
 
     // Disptach requests
     while(1) {
@@ -68,7 +61,7 @@ void start_hyrise_mock(const char *port) {
         for (i = 0; i < FD_SETSIZE; ++i) {
             if (FD_ISSET (i, &read_fd_set)) {
                 if (i == dispatcher_socket) {
-                    /* Connection request on original socket. */
+		    // Client connection request on dispatcher socket.
                     int new;
                     size = sizeof (clientname);
                     new = accept (dispatcher_socket,
@@ -84,22 +77,43 @@ void start_hyrise_mock(const char *port) {
                              inet_ntoa (clientname.sin_addr),
                              ntohs (clientname.sin_port));
                     FD_SET (new, &active_fd_set);
+
+                    // create connection structure
+                    struct connection *new_connection = malloc(sizeof(struct connection));
+                    new_connection->type = CLIENT_CONNECTION;
+                    new_connection->buffer_offset = 0;
+                    conns[i] = new_connection;
+
+		    // open corresponding DB connection
+                    int db = http_open_connection("192.168.31.38", 5000);
+                    FD_SET (db, &active_fd_set);
+                    struct connection *new_db_connection = malloc(sizeof(struct connection));
+                    new_db_connection->type = DB_CONNECTION;
+                    new_db_connection->buffer_offset = 0;
+                    new_db_connection->corresponding_socket = i;
+                    conns[db] = new_db_connection;
+
+                    new_connection->corresponding_socket = db;
+                    
+                    
+
                 } else {
                     /* Data arriving on an already-connected socket. */
-                    struct connection *con = conns[i];
-                    if (con == NULL) {
-                        struct connection *new_conn = malloc(sizeof(struct connection));
-                        new_conn->buffer_offset = 0;
-                        conns[i] = new_conn;
-                    }
-
-                    ssize_t data_size = recv(i, conns[i]->buffer + conns[i]->buffer_offset, BUFFERSIZE - buffer_offset, MSG_DONTWAIT);
+	            struct connection *con = conns[i];
+                    ssize_t data_size = recv(i, con->buffer + con->buffer_offset, BUFFERSIZE - con->buffer_offset, MSG_DONTWAIT);
                     if (data_size == 0) {
+		      assert(con->type == CLIENT_CONNECTION);
                         debug("Connection closed by client");
                         close(i);
-                        free(conns[i]);
+
+                        // Close corresponding DB socket
+                        int db_socket = con->corresponding_socket;
+			free(conns[db_socket]);
+                        conns[db_socket] = NULL;
+                        close(db_socket);
+
+                        free(con);
                         conns[i] = NULL;
-                        DB_connections[i] == -1;
                         FD_CLR (i, &active_fd_set);
                         continue;
                     }
@@ -113,70 +127,24 @@ void start_hyrise_mock(const char *port) {
                     }
                     conns[i]->buffer_offset += data_size;
 
-                    if (DB_connections[i] == -1) {
-                        // client connection
+                    if (con->type == CLIENT_CONNECTION) {
                         struct HttpRequest *request = NULL;
-                        status = connection_http_request_parse(con, &request);
+                        // status = http_request_parse(con, &request);
+                        int status = http_receive_request(i, &request);
                         if (status == 0) {
-                            int db_con = get_DB_connection();
-                            DB_connections[db_con] = i;
-                            http_send_request(db_conn, request)
+			    http_send_request(con->corresponding_socket, request);
                             HttpRequest_free(request);
                         }
                     } else {
                         // database connection
-                        assert(i == db_s1);
+		        assert(con->type == DB_CONNECTION);
                         struct HttpResponse *response = NULL;
-                        status = connection_http_response_parse(con, &response);
+                        // status = connection_http_response_parse(con, &response);
+                        int status = http_receive_response(i, &response);
                         if (status == 0) {
-                            int client_con = DB_connections[i];
-                            http_send_response(client_conn, request)
-                            HttpResponse_free(request);
-                            DB_connections[-1];
+			    http_send_response(con->corresponding_socket, response);
+                            HttpResponse_free(response);
                         }
-                    }
-
-                    // debug("Client request: %d", i);
-                    // struct HttpRequest *request;
-                    // int error = http_receive_request(i, &request);
-
-                    // if (error == ERR_EOF) {
-                    //     debug("Connection closed");
-                    //     close(i);
-                    //     FD_CLR (i, &active_fd_set);
-                    //     continue;
-                    // } else {
-                    //     //printf("%s\n", request->payload);
-                    //     HttpRequest_free(request);
-                    // }
-
-
-                    ssize_t data_size;
-                    data_size = recv(i, buffer, BUFFERSIZE, MSG_DONTWAIT);
-
-                    //while ((data_size = recv(i, buffer, 1, MSG_DONTWAIT)) == 1) {};
-
-                    if (data_size == 0) {
-                        debug("Connection closed");
-                        close(i);
-                        FD_CLR (i, &active_fd_set);
-                        continue;
-                    }
-                    if (data_size < 0) {
-                        if (errno == EAGAIN) {
-                            // ignor
-                        } else {
-                            log_err("Error recv");
-                            continue;
-                        }
-                    }
-                    buffer[data_size] = '\0';
-                    debug("%s\n", buffer);
-
-                    char http_response[] = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-                    ssize_t send_size = send_all(i, http_response, strlen(http_response), 0);
-                    if (send_size != strlen(http_response)) {
-                        log_err("send_size != data_size");
                     }
                 }
             }
@@ -189,13 +157,13 @@ void start_hyrise_mock(const char *port) {
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("USAGE: ./start_hyrise_mock PORT\n");
+        printf("USAGE: ./start_dispatcher PORT\n");
         return -1;
     }
 
     char *port = argv[1];
 
-    start_hyrise_mock(port);
+    start_dispatcher(port);
     return 0;
 }
 
