@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 #include "dbg.h"
 
 int num_threads = 1;
@@ -34,34 +37,50 @@ void *query_hyrise(void *arg) {
     struct HttpResponse *response;
     int http_error = HTTP_SUCCESS;
 
-    for (i = 0; i < num_queries/num_threads; ++i) {
-        if ((http_error = http_send_request(socket, qha->request)) != HTTP_SUCCESS) {
-            log_err("Error on send request\n");
-            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-                i -= 1;
-                close(socket);
-                socket = http_open_connection(qha->host->url, qha->host->port);
-                continue;
-            }
-            exit(-1);
-        }
+    char buf[BUFFERSIZE];
 
-        if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
-            log_err("http error on response %d\n", http_error);
-            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-                debug("Unexpected Connection close. Retry..");
-                i -= 1;
-                close(socket);
-                socket = http_open_connection(qha->host->url, qha->host->port);
-                continue;
-            }
-            exit(-1);
-        } else {
-            debug("Received: %s", response->payload);
-            success_counter += 1;
-            HttpResponse_free(response);
-        }
+    char http_post[] = "POST %s HTTP/1.1\r\n\
+Content-Length: %d\r\n\r\n\
+%s";
+
+    char *buf_s;
+    int allocatedBytes = asprintf(&buf_s, http_post, "/query", qha->request->content_length, qha->request->payload);
+    if (allocatedBytes == -1) {
+        log_err("An error occurred while creating response.");
+        exit(-1);
     }
+
+    for (i = 0; i < num_queries/num_threads; ++i) {
+        // if ((http_error = http_send_request(socket, qha->request)) != HTTP_SUCCESS) {
+        //     log_err("Error on send request\n");
+        //     if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
+        //         i -= 1;
+        //         close(socket);
+        //         socket = http_open_connection(qha->host->url, qha->host->port);
+        //         continue;
+        //     }
+        //     exit(-1);
+        // }
+        send(socket, buf_s, strlen(buf_s), 0);
+
+        read(socket, buf, BUFFERSIZE);
+        // if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
+        //     log_err("http error on response %d\n", http_error);
+        //     if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
+        //         debug("Unexpected Connection close. Retry..");
+        //         i -= 1;
+        //         close(socket);
+        //         socket = http_open_connection(qha->host->url, qha->host->port);
+        //         continue;
+        //     }
+        //     exit(-1);
+        // } else {
+        //     debug("Received: %s", response->payload);
+        //     success_counter += 1;
+        //     HttpResponse_free(response);
+        // }
+    }
+    free(buf_s);
     close(socket);
     return NULL;
 }

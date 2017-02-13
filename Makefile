@@ -17,7 +17,10 @@ hyrise_mock : http.o hyrise_mock.c
 	cc http.o dict.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
 
 query_hyrise : http.o query_hyrise.o
-	cc http.o dict.o query_hyrise.c -o query_hyrise $(CFLAGS) $(LDLIBS) -pg
+	cc -D_GNU_SOURCE http.o dict.o query_hyrise.o -o query_hyrise $(CFLAGS) $(LDLIBS) -pg
+
+query_hyrise.o: query_hyrise.c http.h
+	cc -D_GNU_SOURCE -c query_hyrise.c $(CFLAGS) -pg
 
 http.o: http.h http.c dict.o
 	cc -D_GNU_SOURCE -c http.c $(CFLAGS) -pg
