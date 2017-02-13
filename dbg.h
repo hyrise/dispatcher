@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <string.h>
 
-//#define NDEBUG
+#define NDEBUG
 
 #define clean_errno() (errno == 0 ? "None" : strerror(errno))
 

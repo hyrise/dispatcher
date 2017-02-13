@@ -5,7 +5,7 @@ CFLAGS = -Wall -g -O3
 LDLIBS = -lpthread
 INCLUDEPATHS = ./jsoncpp
 
-all: start_dispatcher hyrise_mock query_hyrise dict_test simple_dispatcher
+all: start_dispatcher hyrise_mock query_hyrise dict_test simple_dispatcher hyrise_mock2
 
 simple_dispatcher: http.o simple_dispatcher.c
 	cc http.o dict.o simple_dispatcher.c -o simple_dispatcher $(CFLAGS) $(LDLIBS)
@@ -15,6 +15,9 @@ start_dispatcher : $(OBJS) http.o main.cpp
 
 hyrise_mock : http.o hyrise_mock.c
 	cc http.o dict.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
+
+hyrise_mock2 : http.o hyrise_mock2.c
+	cc http.o dict.o hyrise_mock2.c -o hyrise_mock2 $(CFLAGS) $(LDLIBS)
 
 query_hyrise : http.o query_hyrise.o
 	cc -D_GNU_SOURCE http.o dict.o query_hyrise.o -o query_hyrise $(CFLAGS) $(LDLIBS) -pg

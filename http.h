@@ -2,6 +2,8 @@
 #define HTTP_H_
 
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/uio.h>
 #include "dict.h"
 
 
