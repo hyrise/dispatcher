@@ -420,6 +420,7 @@ struct HttpResponse *http_execute_request(struct Host *host, struct HttpRequest 
     }
 
     if (http_send_request(sockfd, request) != 0) {
+        close(sockfd);
         return NULL;
     }
 
