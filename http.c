@@ -34,25 +34,40 @@ const char *dict_get_case(const struct dict *d, const char *key) {
 ssize_t send_all(int socket, const void *buffer, size_t length, int flags) {
     ssize_t offset = 0;
     ssize_t sent_bytes = 0;
-    while ((sent_bytes = send(socket, buffer + offset, length - offset, flags)) > 0) {
+
+    while (offset != length) {
+        sent_bytes = send(socket, buffer + offset, length - offset, flags);
+        if (sent_bytes < 0) {
+            switch (errno) {
+            case EINTR:
+                continue;
+            default:
+                return -1;
+            }
+        }
         offset += sent_bytes;
     }
-
-    return sent_bytes == -1 ? -1 : offset;
+    return offset;
 }
 
 
 ssize_t read_all(int socket, void *buffer, size_t length) {
     ssize_t offset = 0;
     ssize_t read_bytes = 0;
-    while ((read_bytes = read(socket, buffer + offset, length - offset)) > 0) {
+
+    while (offset != length) {
+        read_bytes = read(socket, buffer + offset, length - offset);
+        if (read_bytes < 0) {
+            switch (errno) {
+            case EINTR:
+                continue;
+            default:
+                return -1;
+            }
+        }
         offset += read_bytes;
     }
-    if (read_bytes == 0 && offset < length) {
-        return 0;
-    }
-
-    return read_bytes == -1 ? -1 : offset;
+    return offset;
 }
 
 
@@ -121,10 +136,30 @@ int http_read_line(int sockfd, char **line) {
     char *buf = (char *)malloc(sizeof(char) * BUFFERSIZE);
     check_mem(buf);
     size_t buf_offset = 0;  // total received bytes
+    size_t recv_size;
     int got_cr = 0;
 
-    size_t recv_size = 0;  // total received bytes
-    while ((recv_size = read(sockfd, buf+buf_offset, 1)) == 1) {
+    while (TRUE) {
+        recv_size = read(sockfd, buf+buf_offset, 1);
+        if (recv_size < 0) {
+            switch (errno) {
+            case EINTR:
+                continue;
+            case ECONNRESET:
+                free(buf);
+                log_info("Connection reset.");
+                return ERR_CONNECTION_RESET;
+            default:
+                log_err("Error on read.");
+                exit(1);
+            }
+        } else if (recv_size == 0) {
+            if (buf_offset == 0)
+		continue;
+            free(buf);
+            log_err("Read EOF.");
+            return ERR_EOF;
+        }
         if (buf[buf_offset] == '\r') {
             got_cr = 1;
         }
@@ -145,17 +180,7 @@ int http_read_line(int sockfd, char **line) {
         debug("Receive line: %s", *line);
         return 0;
     }
-    debug("Received no crlf indicating end of line.");
-    if (recv_size == 0) {
-        log_err("Read EOF.");
-        return ERR_EOF;
-    } else {
-        log_err("Error on read");
-        if (errno == ECONNRESET) {
-            return ERR_CONNECTION_RESET;
-        }
-        exit(1);
-    }
+    debug("Allocting line failed.");
     return -1;
 }
 
@@ -465,6 +490,9 @@ Content-Length: %d\r\n\r\n\
     ssize_t sent_bytes;
     if ((sent_bytes = send_all(sockfd, buf, strlen(buf), 0)) == -1) {
         free(buf);
+        if (errno == ECONNRESET) {
+            return ERR_CONNECTION_RESET;
+        }
         if (errno == EPIPE) {
             return ERR_BROKEN_PIPE;
         }
@@ -497,7 +525,12 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
         // TODO
         const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
         if (send_all(sockfd, error_response, strlen(error_response), 0) == -1) {
+            if (errno == ECONNRESET) {
+                log_info("Connection reset.");
+                return ERR_CONNECTION_RESET;
+            }
             if (errno == EPIPE) {
+                log_info("Broken pipe.");
                 return ERR_BROKEN_PIPE;
             }
             log_err("Send response.");
@@ -507,7 +540,12 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
     else {
         if (send_all(sockfd, buf, strlen(buf), 0) == -1) {
             free(buf);
+            if (errno == ECONNRESET) {
+                log_info("Connection reset.");
+                return ERR_CONNECTION_RESET;
+            }
             if (errno == EPIPE) {
+                log_info("Broken pipe.");
                 return ERR_BROKEN_PIPE;
             }
             log_err("Send response.");
