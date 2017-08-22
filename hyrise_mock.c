@@ -24,7 +24,7 @@ void start_hyrise_mock(const char *port) {
     FD_ZERO (&active_fd_set);
     FD_SET (db_socket, &active_fd_set);
 
-    char buffer[BUFFERSIZE];
+    // char buffer[BUFFERSIZE];
 
     // Disptach requests
     while(1) {
@@ -62,7 +62,7 @@ void start_hyrise_mock(const char *port) {
                              ntohs (clientname.sin_port));
                     FD_SET (new, &active_fd_set);
                 } else {
-                    ssize_t data_size;
+                    // ssize_t data_size;
                     // data_size = recv(i, buffer, BUFFERSIZE - 1, MSG_DONTWAIT);
 
                     // //while ((data_size = recv(i, buffer, 1, MSG_DONTWAIT)) == 1) {};

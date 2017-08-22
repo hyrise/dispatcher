@@ -12,10 +12,14 @@
 
 #include "dbg.h"
 
+#define BUFFER_SIZE 16384
+
 int num_threads = 1;
 int num_queries = 1;
 
-#define BUFFER_SIZE 16384
+
+// http_receive_response reads data bype per byte for HTTP parsing, which is really slow
+//#define NO_HTTP_LIB
 
 
 unsigned timediff(struct timeval start,  struct timeval stop) {
@@ -30,57 +34,68 @@ struct query_hyrise_arg {
 
 void *query_hyrise(void *arg) {
     int i;
-    int success_counter = 0;
     struct query_hyrise_arg *qha = (struct query_hyrise_arg *)arg;
-
     int socket = http_open_connection(qha->host->url, qha->host->port);
-    struct HttpResponse *response;
-    int http_error = HTTP_SUCCESS;
 
+#ifdef NO_HTTP_LIB
     char buf[BUFFERSIZE];
-
     char http_post[] = "POST %s HTTP/1.1\r\n\
 Content-Length: %d\r\n\r\n\
 %s";
-
     char *buf_s;
     int allocatedBytes = asprintf(&buf_s, http_post, "/query", qha->request->content_length, qha->request->payload);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
         exit(-1);
     }
+#else
+    int success_counter = 0;
+    struct HttpResponse *response;
+    int http_error = HTTP_SUCCESS;
+#endif
 
     for (i = 0; i < num_queries/num_threads; ++i) {
-        // if ((http_error = http_send_request(socket, qha->request)) != HTTP_SUCCESS) {
-        //     log_err("Error on send request\n");
-        //     if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-        //         i -= 1;
-        //         close(socket);
-        //         socket = http_open_connection(qha->host->url, qha->host->port);
-        //         continue;
-        //     }
-        //     exit(-1);
-        // }
-        send(socket, buf_s, strlen(buf_s), 0);
 
+#ifdef NO_HTTP_LIB
+        send_all(socket, buf_s, strlen(buf_s), 0);
+#else
+        if ((http_error = http_send_request(socket, qha->request)) != HTTP_SUCCESS) {
+            log_err("Error on send request\n");
+            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
+                i -= 1;
+                close(socket);
+                socket = http_open_connection(qha->host->url, qha->host->port);
+                continue;
+            }
+            exit(-1);
+        }
+#endif
+
+#ifdef NO_HTTP_LIB
         read(socket, buf, BUFFERSIZE);
-        // if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
-        //     log_err("http error on response %d\n", http_error);
-        //     if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-        //         debug("Unexpected Connection close. Retry..");
-        //         i -= 1;
-        //         close(socket);
-        //         socket = http_open_connection(qha->host->url, qha->host->port);
-        //         continue;
-        //     }
-        //     exit(-1);
-        // } else {
-        //     debug("Received: %s", response->payload);
-        //     success_counter += 1;
-        //     HttpResponse_free(response);
-        // }
+#else
+        if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
+            log_err("http error on response %d\n", http_error);
+            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
+                debug("Unexpected Connection close. Retry..");
+                i -= 1;
+                close(socket);
+                socket = http_open_connection(qha->host->url, qha->host->port);
+                continue;
+            }
+            exit(-1);
+        } else {
+            debug("Received: %s", response->payload);
+            success_counter += 1;
+            HttpResponse_free(response);
+        }
+#endif
     }
+
+#ifdef NO_HTTP_LIB
     free(buf_s);
+#endif
+
     close(socket);
     return NULL;
 }
@@ -124,7 +139,7 @@ int main(int argc, char *argv[]) {
 
     struct HttpRequest r;
     r.method = "POST";
-    r.resource = "/qu";
+    r.resource = "/query";
     r.content_length = strlen(query);
     r.payload = query;
 

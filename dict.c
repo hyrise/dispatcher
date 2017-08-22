@@ -57,7 +57,6 @@ char *dict_get(const struct dict *d, const char *key) {
 
 
 int dict_del(struct dict *d, const char * key) {
-    //TODO free string
     if (d == NULL)
         return -1;
 
@@ -71,7 +70,8 @@ int dict_del(struct dict *d, const char * key) {
                 prev->next = current_item->next;
             else
                 d->head = current_item->next;
-
+            free(current_item->key);
+            free(current_item->next);
             free(current_item);
             return 0;
         }

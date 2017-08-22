@@ -450,7 +450,7 @@ Content-Length: %d\r\n\r\n\
 %s";
 
     char *buf;
-    int allocatedBytes = asprintf(&buf, http_post, "/query", request->content_length, request->payload);
+    int allocatedBytes = asprintf(&buf, http_post, request->resource, request->content_length, request->payload);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
         exit(-1);
