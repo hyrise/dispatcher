@@ -477,12 +477,16 @@ int http_send_request(int sockfd, struct HttpRequest *request) {
     assert(request->resource != NULL);
     assert(request->version != NULL);
 
-    char http_request_template[] = "%s %s HTTP/%s\r\n\
-Content-Length: %d\r\n\r\n\
-%s";
     char *buf;
-    int allocatedBytes = asprintf(&buf, http_request_template, request->method, request->resource,
-        request->version, request->content_length, request->payload);
+    int allocatedBytes;
+    if (request->content_length != 0)
+        allocatedBytes = asprintf(&buf,
+            "%s %s HTTP/%s\r\nContent-Length: %jd\r\n\r\n\%s",
+            request->method, request->resource, request->version,
+            (intmax_t)request->content_length, request->payload);
+    else
+        allocatedBytes = asprintf(&buf, "%s %s HTTP/%s\r\n\r\n",
+            request->method, request->resource, request->version);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
         exit(-1);
