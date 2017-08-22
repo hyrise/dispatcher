@@ -145,6 +145,7 @@ void Dispatcher::handle_connection(int client_socket) {
     struct HttpRequest *request;
     struct HttpResponse *response;
     std::map<std::string, int> connections;
+    static int node_offset;
 
     while (TRUE) {
         // Allocates memory for the request
@@ -226,11 +227,14 @@ void Dispatcher::handle_connection(int client_socket) {
             response->headers = NULL;
             response->content_length = strlen(response->payload);
 
+        } else if (strncmp(request->resource, "/devzero/", sizeof("/devzero/") - 1) == 0) {
+            node_offset = (node_offset + 1) % cluster_nodes->size();
+            send_to_db_node(request, &connections, node_offset, &response);
+
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = query_type(request->payload);
             switch(query_t) {
                 case READ:
-                    static int node_offset = 0;
                     node_offset = (node_offset + 1) % cluster_nodes->size();
                     send_to_db_node(request, &connections, node_offset, &response);
                     break;
