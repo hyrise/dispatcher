@@ -20,9 +20,14 @@ extern "C"
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <pthread.h>
 
 #define MAXPENDING 10
 
+struct thread_arg {
+    Dispatcher *dispatcher;
+    int new_socket;
+};
 
 
 int getIpFromSocket(int sockfd, char* ipstr) {
@@ -45,11 +50,6 @@ int getIpFromSocket(int sockfd, char* ipstr) {
         log_err("Error on getpeername");
     }
     return 0;
-}
-
-
-void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
-    dispatcher->dispatch_requests(id);
 }
 
 
@@ -125,6 +125,164 @@ int queryType(char *http_payload) {
         }
     }
     return READ;
+}
+
+
+void *dispatch_handle_connection_wrapper(void *arg) {
+    //TODO detatch thread
+    struct thread_arg *ta = (struct thread_arg *)arg;
+    Dispatcher *dispatcher = ta->dispatcher;
+    int client_socket = ta->new_socket;
+    free(arg);
+    debug("New thread created: for fd %d", client_socket);
+    dispatcher->handle_connection(client_socket);
+
+    return NULL;
+}
+
+void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socket) {
+    static int i = 0;
+    i = (i + 1) % cluster_nodes->size();
+    struct HttpResponse *response = NULL;
+    response = executeRequest((*cluster_nodes)[i], request);
+
+    if (response == NULL) {
+        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+        check_mem(response);
+        response->status = 500;
+        response->headers = NULL;
+        response->payload = strdup("Database request was not successful.");
+        response->content_length = strlen(response->payload);
+    }
+
+    debug("Response to client.");
+    http_send_response(client_socket, response);
+    HttpResponse_free(response);
+}
+
+
+void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) {
+    struct HttpResponse *response = NULL;
+    response = executeRequest((*cluster_nodes)[0], request);
+
+    if (response == NULL) {
+        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+        check_mem(response);
+        response->status = 500;
+        response->headers = NULL;
+        response->payload = strdup("Database request was not successful.");
+        response->content_length = strlen(response->payload);
+    }
+
+    debug("Response to client.");
+    http_send_response(client_socket, response);
+    HttpResponse_free(response);
+}
+
+void Dispatcher::handle_connection(int client_socket) {
+     // Allocates memory for the request
+    struct HttpRequest *request;
+    int http_error = http_receive_request(client_socket, &request);
+    if (http_error != HTTP_SUCCESS) {
+        debug("Invalid Http request.");
+        assert(request == NULL);
+        // TODO send error msg to client in Case of wrong request
+        close(client_socket);
+        return;
+    }
+    debug("Request payload: %s", request->payload);
+
+    if (strncmp(request->resource, "/add_node/", 10) == 0) {
+        char ip[INET_ADDRSTRLEN];
+        int port;
+        if (getIpFromSocket(client_socket, ip) == 0) {
+            port = (int)strtol(request->resource+10, (char **)NULL, 10);
+            if (port == 0) {
+                log_err("/add_node/ - Detecting port");
+            } else {
+                debug("Add host:  %s:%i", ip, port);
+                add_host(ip, port);
+            }
+        }
+        HttpRequest_free(request);
+        // TODO: Send response
+
+    } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
+        char *delimiter = strchr(request->resource, ':');
+        if (delimiter != NULL) {
+            char *ip = strndup(request->resource + 13, delimiter - (request->resource + 13));
+            int port = 0;
+            remove_host(ip, port);
+            free(ip);
+        }
+        HttpRequest_free(request);
+        // TODO: Send response
+
+    } else if (strcmp(request->resource, "/node_info") == 0) {
+        sendNodeInfo(request, client_socket);
+        HttpRequest_free(request);
+
+    } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
+        char ip[INET_ADDRSTRLEN];
+        int port;
+        if (getIpFromSocket(client_socket, ip) == 0) {
+            port = (int)strtol(request->resource+12, (char **)NULL, 10);
+            if (port == 0) {
+                log_err("/new_master/ - Detecting port");
+            } else {
+                debug("New master:  %s:%i", ip, port);
+                set_master(ip, port);
+            }
+        }
+        HttpRequest_free(request);
+
+    } else if (strcmp(request->resource, "/query") == 0) {
+        int query_t = queryType(request->payload);
+        switch(query_t) {
+            case READ:
+                // TODO
+                send_to_next_node(request, client_socket);
+                //distributor->distribute(request, client_socket);
+                break;
+            case LOAD:
+                send_to_all(request, client_socket);
+                break;
+            case WRITE:
+                send_to_master(request, client_socket);
+                break;
+            default:
+                log_err("Invalid query: %s", request->payload);
+                HttpRequest_free(request);
+
+                struct HttpResponse *response = new HttpResponse;
+                response->status = 500;
+                response->payload = strdup("Invalid query");
+                response->content_length = strlen(response->payload);
+                http_send_response(client_socket, response);
+                free(response);
+        }
+    } else if (strcmp(request->resource, "/procedure") == 0) {
+        distributor->sendToMaster(request, client_socket);
+    } else {
+        log_err("Invalid HTTP resource: %s", request->resource);
+
+        struct HttpResponse *response = new HttpResponse;
+        response->status = 404;
+        if (asprintf(&response->payload, "Invalid HTTP resource: %s", request->resource) == -1) {
+            response->payload = strdup("Invalid HTTP resource");
+        }
+        response->content_length = strlen(response->payload);
+        http_send_response(client_socket, response);
+        HttpRequest_free(request);
+        free(response);
+    }
+    debug("Close client socket with fd %d", client_socket);
+    close(client_socket);
+}
+
+
+void dispatch_requests_wrapper(Dispatcher *dispatcher, int id) {
+    dispatcher->dispatch_requests(id);
 }
 
 
@@ -280,6 +438,38 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     free(response);
 }
 
+void Dispatcher::send_to_all(struct HttpRequest *request, int sock) {
+    debug("Load table.");
+    char entry_template[] = "{\"host\": \"%s:%d\", \"status\": %d, \"answer\": %s},";
+    char *answer = strdup("[ ");    // important whitespace to have valid json for empty list
+
+    char *entry;
+    for (struct Host *host : *cluster_nodes) {
+        struct HttpResponse *response = executeRequest(host, request);
+        if (response) {
+            check_mem(asprintf(&entry, entry_template, host->url, host->port, response->status, response->payload));
+            HttpResponse_free(response);
+        } else {
+            check_mem(asprintf(&entry, entry_template, host->url, host->port, 0, NULL));
+        }
+        answer = (char *)realloc(answer, (strlen(answer) + strlen(entry) + 1) * sizeof(char));   // +1 for terminating \0
+        if (answer == NULL) {
+            log_err("Realloc failed.");
+            exit(EXIT_FAILURE);
+        }
+        strcpy(answer + strlen(answer), entry);
+        free(entry);
+    }
+
+    strcpy(answer + strlen(answer)-1 , "]"); // -1 to overwrite the comma  or whitespace
+    struct HttpResponse client_response;
+    client_response.status = 200;
+    client_response.content_length = strlen(answer);
+    client_response.payload = answer;
+    http_send_response(sock, &client_response);
+
+    free(answer);
+}
 
 void Dispatcher::sendToAll(struct HttpRequest *request, int sock) {
     debug("Load table.");
@@ -345,22 +535,22 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         }
     }
 
-    if (cluster_nodes->size() == 0) {
-        debug("Settings file does not contain any valid hosts.");
-    }
+    // if (cluster_nodes->size() == 0) {
+    //     debug("Settings file does not contain any valid hosts.");
+    // }
 
-    thread_pool_size = v.get("threads", 1).asInt();
+    // thread_pool_size = v.get("threads", 1).asInt();
 
-    std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
+    // std::string dispatch_algorithm = v.get("algorithm", "RoundRobin").asString();
 
-    if (dispatch_algorithm == "Stream") {
-        distributor = new StreamDistributor(cluster_nodes);
-        debug("Used dispatching algorithm: Stream");
-    } else {
-        //SimpleRoundRobinDipatcher is the standard algorithm
-        distributor = new RoundRobinDistributor(cluster_nodes);
-        debug("Used dispatching algorithm: RoundRobin");
-    }
+    // if (dispatch_algorithm == "Stream") {
+    //     distributor = new StreamDistributor(cluster_nodes);
+    //     debug("Used dispatching algorithm: Stream");
+    // } else {
+    //     //SimpleRoundRobinDipatcher is the standard algorithm
+    //     distributor = new RoundRobinDistributor(cluster_nodes);
+    //     debug("Used dispatching algorithm: RoundRobin");
+    // }
 }
 
 
@@ -368,9 +558,9 @@ void Dispatcher::start() {
     signal(SIGPIPE, SIG_IGN);
     debug("Start dispatcher");
     // Start parser threads
-    for (int i = 0; i < thread_pool_size; ++i) {
-        parser_thread_pool.emplace_back(dispatch_requests_wrapper, this, i);
-    }
+    // for (int i = 0; i < thread_pool_size; ++i) {
+    //     parser_thread_pool.emplace_back(dispatch_requests_wrapper, this, i);
+    // }
 
     // create dispatcher socket
     int socket = http_create_inet_socket(port);
@@ -384,12 +574,20 @@ void Dispatcher::start() {
             throw "Error: on accept.";
         }
         debug("Main: new request.");
-        {
-            std::unique_lock<std::mutex> lck(request_queue_mutex);
-            debug("Main: push to request_queue.");
-            request_queue.push(new_socket);
-            request_queue_empty.notify_one();
+        pthread_t thread;
+        struct thread_arg *ta = (struct thread_arg *)malloc(sizeof(struct thread_arg));
+        ta->dispatcher = this;
+        ta->new_socket = new_socket;
+        if (pthread_create(&thread, NULL, &dispatch_handle_connection_wrapper, (void *)ta) != 0) {
+            log_err("pthread_create failed");
+            exit(-1);
         }
+        // {
+        //     std::unique_lock<std::mutex> lck(request_queue_mutex);
+        //     debug("Main: push to request_queue.");
+        //     request_queue.push(new_socket);
+        //     request_queue_empty.notify_one();
+        // }
     }
 }
 

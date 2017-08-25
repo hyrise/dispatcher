@@ -465,7 +465,7 @@ Content-Length: %d\r\n\r\n\
         exit(-1);
     }
     if (sent_bytes != strlen(buf)) {
-        debug("WARNING: send was short. %zd of %lu bytes", sent_bytes, strlen(buf));
+        log_err("ERROR: send was short. %zd of %lu bytes", sent_bytes, strlen(buf));
     }
     debug("SEND\n%s\n", buf);
     free(buf);
