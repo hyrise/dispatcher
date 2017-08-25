@@ -72,6 +72,7 @@ std::string urlDecode(std::string &SRC) {
 int queryType(char *http_payload) {
     debug("Find out query type");
     if (http_payload == NULL) {
+        log_err("No payload. Expected JSON query.");
         return -1;
     }
     std::string http_payload_str(http_payload);
@@ -178,106 +179,105 @@ void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) 
 }
 
 void Dispatcher::handle_connection(int client_socket) {
-     // Allocates memory for the request
     struct HttpRequest *request;
-    int http_error = http_receive_request(client_socket, &request);
-    if (http_error != HTTP_SUCCESS) {
-        debug("Invalid Http request.");
-        assert(request == NULL);
-        // TODO send error msg to client in Case of wrong request
+    while (TRUE) {
+        // Allocates memory for the request
+        int http_error = http_receive_request(client_socket, &request);
+        if (http_error != HTTP_SUCCESS) {
+            assert(request == NULL);
+            // TODO send error msg to client in Case of wrong request
+            close(client_socket);
+            return;
+        }
+
+        if (strncmp(request->resource, "/add_node/", 10) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            int port;
+            if (getIpFromSocket(client_socket, ip) == 0) {
+                port = (int)strtol(request->resource+10, (char **)NULL, 10);
+                if (port == 0) {
+                    log_err("/add_node/ - Detecting port");
+                } else {
+                    debug("Add host:  %s:%i", ip, port);
+                    add_host(ip, port);
+                }
+            }
+            HttpRequest_free(request);
+            // TODO: Send response
+
+        } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
+            char *delimiter = strchr(request->resource, ':');
+            if (delimiter != NULL) {
+                char *ip = strndup(request->resource + 13, delimiter - (request->resource + 13));
+                int port = 0;
+                remove_host(ip, port);
+                free(ip);
+            }
+            // TODO: Send response
+
+        } else if (strcmp(request->resource, "/node_info") == 0) {
+            send_node_info(request, client_socket);
+
+        } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            int port;
+            if (getIpFromSocket(client_socket, ip) == 0) {
+                port = (int)strtol(request->resource+12, (char **)NULL, 10);
+                if (port == 0) {
+                    log_err("/new_master/ - Detecting port");
+                } else {
+                    debug("New master:  %s:%i", ip, port);
+                    set_master(ip, port);
+                }
+            }
+            // TODO: Send response
+
+        } else if (strcmp(request->resource, "/query") == 0) {
+            int query_t = queryType(request->payload);
+            switch(query_t) {
+                case READ:
+                    send_to_next_node(request, client_socket);
+                    break;
+                case LOAD:
+                    send_to_all(request, client_socket);
+                    break;
+                case WRITE:
+                    send_to_master(request, client_socket);
+                    break;
+                default:
+                    log_err("Invalid query: %s", request->payload);
+
+                    struct HttpResponse *response = new HttpResponse;
+                    response->status = 500;
+                    response->payload = strdup("Invalid query");
+                    response->content_length = strlen(response->payload);
+                    http_send_response(client_socket, response);
+                    free(response);
+            }
+        } else if (strcmp(request->resource, "/procedure") == 0) {
+            send_to_master(request, client_socket);
+        } else {
+            log_err("Invalid HTTP resource: %s", request->resource);
+
+            struct HttpResponse *response = new HttpResponse;
+            response->status = 404;
+            if (asprintf(&response->payload, "Invalid HTTP resource: %s", request->resource) == -1) {
+                response->payload = strdup("Invalid HTTP resource");
+            }
+            response->content_length = strlen(response->payload);
+            http_send_response(client_socket, response);
+            free(response);
+        }
+        if (HttpRequest_persistent_connection(request) == TRUE) {
+            HttpRequest_free(request);
+            continue;
+        }
+
+        HttpRequest_free(request);
+        debug("Close client socket with fd %d", client_socket);
         close(client_socket);
-        return;
+        break;
     }
-    debug("Request payload: %s", request->payload);
-
-    if (strncmp(request->resource, "/add_node/", 10) == 0) {
-        char ip[INET_ADDRSTRLEN];
-        int port;
-        if (getIpFromSocket(client_socket, ip) == 0) {
-            port = (int)strtol(request->resource+10, (char **)NULL, 10);
-            if (port == 0) {
-                log_err("/add_node/ - Detecting port");
-            } else {
-                debug("Add host:  %s:%i", ip, port);
-                add_host(ip, port);
-            }
-        }
-        HttpRequest_free(request);
-        // TODO: Send response
-
-    } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
-        char *delimiter = strchr(request->resource, ':');
-        if (delimiter != NULL) {
-            char *ip = strndup(request->resource + 13, delimiter - (request->resource + 13));
-            int port = 0;
-            remove_host(ip, port);
-            free(ip);
-        }
-        HttpRequest_free(request);
-        // TODO: Send response
-
-    } else if (strcmp(request->resource, "/node_info") == 0) {
-        send_node_info(request, client_socket);
-        HttpRequest_free(request);
-
-    } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
-        char ip[INET_ADDRSTRLEN];
-        int port;
-        if (getIpFromSocket(client_socket, ip) == 0) {
-            port = (int)strtol(request->resource+12, (char **)NULL, 10);
-            if (port == 0) {
-                log_err("/new_master/ - Detecting port");
-            } else {
-                debug("New master:  %s:%i", ip, port);
-                set_master(ip, port);
-            }
-        }
-        HttpRequest_free(request);
-
-    } else if (strcmp(request->resource, "/query") == 0) {
-        int query_t = queryType(request->payload);
-        switch(query_t) {
-            case READ:
-                // TODO
-                send_to_next_node(request, client_socket);
-                HttpRequest_free(request);
-                break;
-            case LOAD:
-                send_to_all(request, client_socket);
-                HttpRequest_free(request);
-                break;
-            case WRITE:
-                send_to_master(request, client_socket);
-                HttpRequest_free(request);
-                break;
-            default:
-                log_err("Invalid query: %s", request->payload);
-                HttpRequest_free(request);
-
-                struct HttpResponse *response = new HttpResponse;
-                response->status = 500;
-                response->payload = strdup("Invalid query");
-                response->content_length = strlen(response->payload);
-                http_send_response(client_socket, response);
-                free(response);
-        }
-    } else if (strcmp(request->resource, "/procedure") == 0) {
-        send_to_master(request, client_socket);
-    } else {
-        log_err("Invalid HTTP resource: %s", request->resource);
-
-        struct HttpResponse *response = new HttpResponse;
-        response->status = 404;
-        if (asprintf(&response->payload, "Invalid HTTP resource: %s", request->resource) == -1) {
-            response->payload = strdup("Invalid HTTP resource");
-        }
-        response->content_length = strlen(response->payload);
-        http_send_response(client_socket, response);
-        HttpRequest_free(request);
-        free(response);
-    }
-    debug("Close client socket with fd %d", client_socket);
-    close(client_socket);
 }
 
 
@@ -373,9 +373,9 @@ Dispatcher::Dispatcher(char *port, char *settings_file) {
         }
     }
 
-    // if (cluster_nodes->size() == 0) {
-    //     debug("Settings file does not contain any valid hosts.");
-    // }
+    if (cluster_nodes->size() == 0) {
+        debug("Settings file does not contain any valid hosts.");
+    }
 }
 
 

@@ -419,9 +419,6 @@ struct HttpResponse *http_execute_request(struct Host *host, struct HttpRequest 
         return NULL;
     }
 
-    const char *connection_type = dict_get_case(request->headers, "Connection");
-    debug("connection_type: %s", connection_type);
-
     if (http_send_request(sockfd, request) != 0) {
         return NULL;
     }
@@ -517,6 +514,19 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
 }
 
 
+int HttpRequest_persistent_connection(struct HttpRequest *request) {
+    const char *connection_type = dict_get_case(request->headers, "Connection");
+    debug("Connection_type: HTTP/%s; Connection: %s", request->version, connection_type);
+
+    if (strncmp(request->version, "1.1", 3) == 0 && connection_type == NULL) {
+        return TRUE;
+    } else if (strncmp(request->version, "1.1", 3) == 0 && connection_type != NULL && strncasecmp(connection_type, "close", 5) != 0) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+
 void HttpRequest_free(struct HttpRequest *request) {
     debug("http request free");
     if (request == NULL) {
@@ -536,7 +546,8 @@ void HttpRequest_print(struct HttpRequest *request) {
         printf("NULL(HttpRequest)\n\n");
         return;
     }
-    printf("HttpRequest\n%s %s HTTP/%s\n%s\n\n", request->method, request->resource, request->version, request->payload);
+    printf("HttpRequest\n\tPersistent Connection:%d\n%s %s HTTP/%s\n%s\n\n",\
+        HttpRequest_persistent_connection(request), request->method, request->resource, request->version, request->payload);
 }
 
 
