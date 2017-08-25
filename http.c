@@ -160,7 +160,7 @@ int http_read_line(int sockfd, char **line) {
 }
 
 
-int http_parse_request_line(char *line, char **method, char **resource) {
+int http_parse_request_line(char *line, char **method, char **resource, char **version) {
     *method = NULL;
     *resource = NULL;
     size_t method_end = 0;
@@ -186,6 +186,7 @@ int http_parse_request_line(char *line, char **method, char **resource) {
     }
     *method = strndup(line, method_end);
     *resource = strndup(line + method_end + 1, resource_end - (method_end + 1));
+    *version = strndup(line + resource_end + 6, 3);
     return 0;
 }
 
@@ -295,6 +296,7 @@ int http_receive_request(int sockfd, struct HttpRequest **received_request) {
     *received_request = NULL;
     char *method = NULL;
     char *resource = NULL;
+    char *version = NULL;
     struct dict *headers = dict_create();
     int content_length = -1;
     char *payload = NULL;
@@ -305,7 +307,7 @@ int http_receive_request(int sockfd, struct HttpRequest **received_request) {
     if ((http_error = http_read_line(sockfd, &line)) != HTTP_SUCCESS) {
         goto error;
     }
-    if ((http_error = http_parse_request_line(line, &method, &resource)) != HTTP_SUCCESS) {
+    if ((http_error = http_parse_request_line(line, &method, &resource, &version)) != HTTP_SUCCESS) {
         goto error;
     }
     free(line);
@@ -333,6 +335,7 @@ int http_receive_request(int sockfd, struct HttpRequest **received_request) {
     check_mem(request);
     request->method = method;
     request->resource = resource;
+    request->version = version;
     request->headers = headers;
     request->content_length = content_length;
     request->payload = payload;
@@ -344,6 +347,7 @@ error:
     dict_free(headers);
     free(method);
     free(resource);
+    free(version);
     free(payload);
     free(line);
     assert(http_error != HTTP_SUCCESS);
@@ -445,12 +449,16 @@ const char *http_reason_phrase(int response_status) {
 
 int http_send_request(int sockfd, struct HttpRequest *request) {
     debug("http_send_request");
-    char http_post[] = "POST %s HTTP/1.1\r\n\
+    assert(request->method != NULL);
+    assert(request->resource != NULL);
+    assert(request->version != NULL);
+
+    char http_request_template[] = "%s %s HTTP/%s\r\n\
 Content-Length: %d\r\n\r\n\
 %s";
-
     char *buf;
-    int allocatedBytes = asprintf(&buf, http_post, request->resource, request->content_length, request->payload);
+    int allocatedBytes = asprintf(&buf, http_request_template, request->method, request->resource,
+        request->version, request->content_length, request->payload);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
         exit(-1);
@@ -516,6 +524,7 @@ void HttpRequest_free(struct HttpRequest *request) {
     }
     free(request->method);
     free(request->resource);
+    free(request->version);
     dict_free(request->headers);
     free(request->payload);
     free(request);
@@ -527,7 +536,7 @@ void HttpRequest_print(struct HttpRequest *request) {
         printf("NULL(HttpRequest)\n\n");
         return;
     }
-    printf("HttpRequest\n%s %s\n%s\n\n", request->method, request->resource, request->payload);
+    printf("HttpRequest\n%s %s HTTP/%s\n%s\n\n", request->method, request->resource, request->version, request->payload);
 }
 
 

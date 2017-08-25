@@ -30,6 +30,7 @@ struct Host {
 struct HttpRequest {
     char *method;
     char *resource;
+    char *version;
     struct dict *headers;
     size_t content_length;
     char *payload;

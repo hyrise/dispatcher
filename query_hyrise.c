@@ -141,6 +141,7 @@ int main(int argc, char *argv[]) {
     struct HttpRequest r;
     r.method = "POST";
     r.resource = "/query";
+    r.version = "1.1";
     r.content_length = strlen(query);
     r.payload = query;
 
