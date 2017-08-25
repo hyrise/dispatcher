@@ -412,7 +412,7 @@ error:
 }
 
 
-struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request) {
+struct HttpResponse *http_execute_request(struct Host *host, struct HttpRequest *request) {
     debug("execute request %s:%d", host->url, host->port);
     int sockfd = http_open_connection(host->url, host->port);
     if (sockfd == -1) {
@@ -429,7 +429,7 @@ struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *reque
     struct HttpResponse *response;
     int http_error =  http_receive_response(sockfd, &response);
     if (http_error != HTTP_SUCCESS) {
-        debug("http error: executeRequest");
+        debug("http error: http_execute_request");
     }
     debug("Close socket.");
     close(sockfd);

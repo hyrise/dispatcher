@@ -50,7 +50,7 @@ int http_create_inet_socket(const char *port);
 int http_open_connection(const char *url, int port);
 int http_receive_request(int sockfd, struct HttpRequest **received_request);
 int http_receive_response(int sockfd, struct HttpResponse **received_response);
-struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *request);
+struct HttpResponse *http_execute_request(struct Host *host, struct HttpRequest *request);
 int http_send_request(int sockfd, struct HttpRequest *request);
 int http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);

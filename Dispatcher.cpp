@@ -142,7 +142,7 @@ void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socke
     static int i = 0;
     i = (i + 1) % cluster_nodes->size();
     struct HttpResponse *response = NULL;
-    response = executeRequest((*cluster_nodes)[i], request);
+    response = http_execute_request((*cluster_nodes)[i], request);
 
     if (response == NULL) {
         response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
@@ -161,7 +161,7 @@ void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socke
 
 void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) {
     struct HttpResponse *response = NULL;
-    response = executeRequest((*cluster_nodes)[0], request);
+    response = http_execute_request((*cluster_nodes)[0], request);
 
     if (response == NULL) {
         response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
@@ -317,7 +317,7 @@ void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
 
     char *entry;
     for (struct Host *host : *cluster_nodes) {
-        struct HttpResponse *response = executeRequest(host, request);
+        struct HttpResponse *response = http_execute_request(host, request);
         if (response) {
             check_mem(asprintf(&entry, entry_template, host->url, host->port, response->status, response->payload));
             HttpResponse_free(response);
