@@ -22,14 +22,9 @@ extern "C"
 
 #define MAXPENDING 10
 
-struct thread_arg {
-    Dispatcher *dispatcher;
-    int new_socket;
-};
 
-
-int getIpFromSocket(int sockfd, char* ipstr) {
-    debug("getIpFromSocket");
+int get_ip_from_socket(int sockfd, char* ipstr) {
+    debug("get_ip_from_socket");
     // TODO: IPv6 Support
     struct sockaddr addr;
     socklen_t addrlen = sizeof(struct sockaddr);
@@ -51,7 +46,7 @@ int getIpFromSocket(int sockfd, char* ipstr) {
 }
 
 
-std::string urlDecode(std::string &SRC) {
+std::string url_decode(std::string &SRC) {
     std::string ret;
     char ch;
     unsigned int i, ii;
@@ -69,7 +64,7 @@ std::string urlDecode(std::string &SRC) {
 }
 
 
-int queryType(char *http_payload) {
+int query_type(char *http_payload) {
     debug("Find out query type");
     if (http_payload == NULL) {
         log_err("No payload. Expected JSON query.");
@@ -86,7 +81,7 @@ int queryType(char *http_payload) {
         pNextKey = http_payload_str.find('&', pValue);
         std::string key = http_payload_str.substr(pLastKey, pValue - pLastKey);
         std::string value = http_payload_str.substr(pValue + 1, pNextKey == std::string::npos ? pNextKey : pNextKey - pValue -1);
-        content.emplace(key, urlDecode(value));
+        content.emplace(key, url_decode(value));
         if (pNextKey == std::string::npos) break;
         pLastKey = pNextKey + 1;
     }
@@ -127,6 +122,12 @@ int queryType(char *http_payload) {
 }
 
 
+// Parameter for pthread_create()
+struct thread_arg {
+    Dispatcher *dispatcher;
+    int new_socket;
+};
+
 void *dispatch_handle_connection_wrapper(void *arg) {
     //TODO detatch thread
     struct thread_arg *ta = (struct thread_arg *)arg;
@@ -139,44 +140,6 @@ void *dispatch_handle_connection_wrapper(void *arg) {
     return NULL;
 }
 
-void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socket) {
-    static int i = 0;
-    i = (i + 1) % cluster_nodes->size();
-    struct HttpResponse *response = NULL;
-    response = http_execute_request((*cluster_nodes)[i], request);
-
-    if (response == NULL) {
-        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
-        check_mem(response);
-        response->status = 500;
-        response->headers = NULL;
-        response->payload = strdup("Database request was not successful.");
-        response->content_length = strlen(response->payload);
-    }
-
-    debug("Response to client.");
-    http_send_response(client_socket, response);
-    HttpResponse_free(response);
-}
-
-
-void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) {
-    struct HttpResponse *response = NULL;
-    response = http_execute_request((*cluster_nodes)[0], request);
-
-    if (response == NULL) {
-        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
-        check_mem(response);
-        response->status = 500;
-        response->headers = NULL;
-        response->payload = strdup("Database request was not successful.");
-        response->content_length = strlen(response->payload);
-    }
-
-    debug("Response to client.");
-    http_send_response(client_socket, response);
-    HttpResponse_free(response);
-}
 
 void Dispatcher::handle_connection(int client_socket) {
     struct HttpRequest *request;
@@ -193,7 +156,7 @@ void Dispatcher::handle_connection(int client_socket) {
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             char ip[INET_ADDRSTRLEN];
             int port;
-            if (getIpFromSocket(client_socket, ip) == 0) {
+            if (get_ip_from_socket(client_socket, ip) == 0) {
                 port = (int)strtol(request->resource+10, (char **)NULL, 10);
                 if (port == 0) {
                     log_err("/add_node/ - Detecting port");
@@ -221,7 +184,7 @@ void Dispatcher::handle_connection(int client_socket) {
         } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
             char ip[INET_ADDRSTRLEN];
             int port;
-            if (getIpFromSocket(client_socket, ip) == 0) {
+            if (get_ip_from_socket(client_socket, ip) == 0) {
                 port = (int)strtol(request->resource+12, (char **)NULL, 10);
                 if (port == 0) {
                     log_err("/new_master/ - Detecting port");
@@ -233,7 +196,7 @@ void Dispatcher::handle_connection(int client_socket) {
             // TODO: Send response
 
         } else if (strcmp(request->resource, "/query") == 0) {
-            int query_t = queryType(request->payload);
+            int query_t = query_type(request->payload);
             switch(query_t) {
                 case READ:
                     send_to_next_node(request, client_socket);
@@ -309,6 +272,47 @@ void Dispatcher::send_node_info(struct HttpRequest *request, int client_socket) 
     free(node_info);
     free(response);
 }
+
+
+void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socket) {
+    static int i = 0;
+    i = (i + 1) % cluster_nodes->size();
+    struct HttpResponse *response = NULL;
+    response = http_execute_request((*cluster_nodes)[i], request);
+
+    if (response == NULL) {
+        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+        check_mem(response);
+        response->status = 500;
+        response->headers = NULL;
+        response->payload = strdup("Database request was not successful.");
+        response->content_length = strlen(response->payload);
+    }
+
+    debug("Response to client.");
+    http_send_response(client_socket, response);
+    HttpResponse_free(response);
+}
+
+
+void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) {
+    struct HttpResponse *response = NULL;
+    response = http_execute_request((*cluster_nodes)[0], request);
+
+    if (response == NULL) {
+        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+        check_mem(response);
+        response->status = 500;
+        response->headers = NULL;
+        response->payload = strdup("Database request was not successful.");
+        response->content_length = strlen(response->payload);
+    }
+
+    debug("Response to client.");
+    http_send_response(client_socket, response);
+    HttpResponse_free(response);
+}
+
 
 void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
     debug("Load table.");
