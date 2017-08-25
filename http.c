@@ -522,6 +522,15 @@ void HttpRequest_free(struct HttpRequest *request) {
 }
 
 
+void HttpRequest_print(struct HttpRequest *request) {
+    if (request == NULL) {
+        printf("NULL(HttpRequest)\n\n");
+        return;
+    }
+    printf("HttpRequest\n%s %s\n%s\n\n", request->method, request->resource, request->payload);
+}
+
+
 void HttpResponse_free(struct HttpResponse *response) {
     debug("http response free");
     if (response == NULL) {
@@ -530,4 +539,13 @@ void HttpResponse_free(struct HttpResponse *response) {
     dict_free(response->headers);
     free(response->payload);
     free(response);
+}
+
+
+void HttpResponse_print(struct HttpResponse *response) {
+    if (response == NULL) {
+        printf("NULL(HttpResponse)\n\n");
+        return;
+    }
+    printf("HttpResponse\n%d\n%s\n\n", response->status, response->payload);
 }

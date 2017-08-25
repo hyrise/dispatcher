@@ -24,17 +24,16 @@ private:
     Dispatcher( const Dispatcher& other ); // non construction-copyable
     Dispatcher& operator=( const Dispatcher& ); // non copyable
 
-    void sendNodeInfo(struct HttpRequest *request, int sock);
+    void send_node_info(struct HttpRequest *request, int client_socket);
     
 public:
     Dispatcher(char *port, char *settings_file);
-    void dispatch_requests(int id);
     void start();
     void set_master(const char *url, int port);
     void add_host(const char *url, int port);
     void remove_host(const char *url, int port);
     void handle_connection(int client_socket);
-    void send_to_all(struct HttpRequest *request, int sock);
+    void send_to_all(struct HttpRequest *request, int client_socket);
     void send_to_next_node(struct HttpRequest *request, int client_socket);
     void send_to_master(struct HttpRequest *request, int client_socket);
 };

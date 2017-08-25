@@ -86,6 +86,7 @@ Content-Length: %d\r\n\r\n\
             exit(-1);
         } else {
             debug("Received: %s", response->payload);
+            HttpResponse_print(response);
             success_counter += 1;
             HttpResponse_free(response);
         }

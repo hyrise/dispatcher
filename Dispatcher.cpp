@@ -217,7 +217,7 @@ void Dispatcher::handle_connection(int client_socket) {
         // TODO: Send response
 
     } else if (strcmp(request->resource, "/node_info") == 0) {
-        sendNodeInfo(request, client_socket);
+        send_node_info(request, client_socket);
         HttpRequest_free(request);
 
     } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
@@ -240,12 +240,15 @@ void Dispatcher::handle_connection(int client_socket) {
             case READ:
                 // TODO
                 send_to_next_node(request, client_socket);
+                HttpRequest_free(request);
                 break;
             case LOAD:
                 send_to_all(request, client_socket);
+                HttpRequest_free(request);
                 break;
             case WRITE:
                 send_to_master(request, client_socket);
+                HttpRequest_free(request);
                 break;
             default:
                 log_err("Invalid query: %s", request->payload);
@@ -278,7 +281,7 @@ void Dispatcher::handle_connection(int client_socket) {
 }
 
 
-void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
+void Dispatcher::send_node_info(struct HttpRequest *request, int client_socket) {
     debug("Send node info.");
     char *node_info = (char *)malloc(sizeof(char) * 256 * (cluster_nodes->size()+1));
     char *current_position = node_info;
@@ -302,12 +305,12 @@ void Dispatcher::sendNodeInfo(struct HttpRequest *request, int sock) {
     response->content_length = strlen(node_info);
     response->payload = node_info;
 
-    http_send_response(sock, response);
+    http_send_response(client_socket, response);
     free(node_info);
     free(response);
 }
 
-void Dispatcher::send_to_all(struct HttpRequest *request, int sock) {
+void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
     debug("Load table.");
     char entry_template[] = "{\"host\": \"%s:%d\", \"status\": %d, \"answer\": %s},";
     char *answer = strdup("[ ");    // important whitespace to have valid json for empty list
@@ -335,7 +338,7 @@ void Dispatcher::send_to_all(struct HttpRequest *request, int sock) {
     client_response.status = 200;
     client_response.content_length = strlen(answer);
     client_response.payload = answer;
-    http_send_response(sock, &client_response);
+    http_send_response(client_socket, &client_response);
 
     free(answer);
 }

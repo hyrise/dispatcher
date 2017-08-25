@@ -53,7 +53,9 @@ struct HttpResponse *executeRequest(struct Host *host, struct HttpRequest *reque
 int http_send_request(int sockfd, struct HttpRequest *request);
 int http_send_response(int sockfd, struct HttpResponse *response);
 void HttpRequest_free(struct HttpRequest *request);
+void HttpRequest_print(struct HttpRequest *request);
 void HttpResponse_free(struct HttpResponse *response);
+void HttpResponse_print(struct HttpResponse *response);
 
 
 #endif
