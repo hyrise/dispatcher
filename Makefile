@@ -1,4 +1,4 @@
-OBJS = Dispatcher.o jsoncpp.o RoundRobinDistributor.o StreamDistributor.o
+OBJS = Dispatcher.o jsoncpp.o
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -g -O3
 CFLAGS = -Wall -g -O3

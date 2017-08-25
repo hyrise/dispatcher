@@ -13,5 +13,4 @@ int main(int argc, char *argv[]) {
     Dispatcher d(port, file_name);
 
     d.start();
-    d.shut_down();
 }
