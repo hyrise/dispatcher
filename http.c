@@ -291,9 +291,9 @@ int http_receive_payload(int sockfd, char **payload, int content_length) {
 }
 
 
-int http_receive_request(int sockfd, struct HttpRequest **received_request) {
+int http_receive_request(int sockfd, struct HttpRequest **request_ref) {
     debug("http_receive_request");
-    *received_request = NULL;
+    *request_ref = NULL;
     char *method = NULL;
     char *resource = NULL;
     char *version = NULL;
@@ -340,7 +340,7 @@ int http_receive_request(int sockfd, struct HttpRequest **received_request) {
     request->content_length = content_length;
     request->payload = payload;
 
-    *received_request = request;
+    *request_ref = request;
     return HTTP_SUCCESS;
 
 error:
@@ -355,9 +355,9 @@ error:
 }
 
 
-int http_receive_response(int sockfd, struct HttpResponse **received_response) {
+int http_receive_response(int sockfd, struct HttpResponse **response_ref) {
     debug("http_receive_response");
-    *received_response = NULL;
+    *response_ref = NULL;
     int status = 0;
     struct dict *headers = dict_create();
     int content_length = -1;
@@ -400,7 +400,7 @@ int http_receive_response(int sockfd, struct HttpResponse **received_response) {
     response->content_length = content_length;
     response->payload = payload;
 
-    *received_response = response;
+    *response_ref = response;
 
     return HTTP_SUCCESS;
 

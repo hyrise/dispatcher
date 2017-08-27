@@ -48,8 +48,8 @@ ssize_t read_all(int socket, void *buffer, size_t length);
 
 int http_create_inet_socket(const char *port);
 int http_open_connection(const char *url, int port);
-int http_receive_request(int sockfd, struct HttpRequest **received_request);
-int http_receive_response(int sockfd, struct HttpResponse **received_response);
+int http_receive_request(int sockfd, struct HttpRequest **request_ref);
+int http_receive_response(int sockfd, struct HttpResponse **response_ref);
 struct HttpResponse *http_execute_request(struct Host *host, struct HttpRequest *request);
 int http_send_request(int sockfd, struct HttpRequest *request);
 int http_send_response(int sockfd, struct HttpResponse *response);
