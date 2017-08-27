@@ -143,12 +143,18 @@ void *dispatch_handle_connection_wrapper(void *arg) {
 
 void Dispatcher::handle_connection(int client_socket) {
     struct HttpRequest *request;
+    std::map<std::string, int> connections;
+
     while (TRUE) {
         // Allocates memory for the request
         int http_error = http_receive_request(client_socket, &request);
         if (http_error != HTTP_SUCCESS) {
             assert(request == NULL);
             // TODO send error msg to client in Case of wrong request
+            for (auto it = connections.begin(); it != connections.end(); it++ ) {
+                close(it->second);
+            }
+
             close(client_socket);
             return;
         }
@@ -165,7 +171,6 @@ void Dispatcher::handle_connection(int client_socket) {
                     add_host(ip, port);
                 }
             }
-            HttpRequest_free(request);
             // TODO: Send response
 
         } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
@@ -199,13 +204,16 @@ void Dispatcher::handle_connection(int client_socket) {
             int query_t = query_type(request->payload);
             switch(query_t) {
                 case READ:
-                    send_to_next_node(request, client_socket);
+                    static int node_offset = 0;
+                    node_offset = (node_offset + 1) % cluster_nodes->size();
+                    send_to_db_node(request, client_socket, &connections, node_offset);
                     break;
                 case LOAD:
                     send_to_all(request, client_socket);
                     break;
                 case WRITE:
-                    send_to_master(request, client_socket);
+                    // send to master node (node_offset=0)
+                    send_to_db_node(request, client_socket, &connections, 0);
                     break;
                 default:
                     log_err("Invalid query: %s", request->payload);
@@ -218,7 +226,8 @@ void Dispatcher::handle_connection(int client_socket) {
                     free(response);
             }
         } else if (strcmp(request->resource, "/procedure") == 0) {
-            send_to_master(request, client_socket);
+            // send to master node (node_offset=0)
+            send_to_db_node(request, client_socket, &connections, 0);
         } else {
             log_err("Invalid HTTP resource: %s", request->resource);
 
@@ -274,30 +283,30 @@ void Dispatcher::send_node_info(struct HttpRequest *request, int client_socket) 
 }
 
 
-void Dispatcher::send_to_next_node(struct HttpRequest *request, int client_socket) {
-    static int i = 0;
-    i = (i + 1) % cluster_nodes->size();
-    struct HttpResponse *response = NULL;
-    response = http_execute_request((*cluster_nodes)[i], request);
+void Dispatcher::send_to_db_node(struct HttpRequest *request, int client_socket, std::map<std::string, int> *connections, int node_offset) {
+    int db_socket;
+    Host *h = (*cluster_nodes)[node_offset];
 
-    if (response == NULL) {
-        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
-        check_mem(response);
-        response->status = 500;
-        response->headers = NULL;
-        response->payload = strdup("Database request was not successful.");
-        response->content_length = strlen(response->payload);
+    std::string db_node = std::string(h->url) + ":" + std::to_string(h->port);
+
+    auto iter = connections->find(db_node);
+    if (iter == connections->end()) {
+        db_socket = (*connections)[db_node] = http_open_connection(h->url, h->port);
+    } else {
+        db_socket = iter->second;
     }
 
-    debug("Response to client.");
-    http_send_response(client_socket, response);
-    HttpResponse_free(response);
-}
+    // TODO: proper error handling (try to open new connection ...)
+    if (http_send_request(db_socket, request) != 0) {
+        log_err("Error while sending request to database.");
+        return;
+    }
 
-
-void Dispatcher::send_to_master(struct HttpRequest *request, int client_socket) {
-    struct HttpResponse *response = NULL;
-    response = http_execute_request((*cluster_nodes)[0], request);
+    struct HttpResponse *response;
+    int http_error = http_receive_response(db_socket, &response);
+    if (http_error != HTTP_SUCCESS) {
+        log_err("http error: http_receive_response");
+    }
 
     if (response == NULL) {
         response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
@@ -323,6 +332,7 @@ void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
     for (struct Host *host : *cluster_nodes) {
         struct HttpResponse *response = http_execute_request(host, request);
         if (response) {
+            // TODO: FIX: asprintf returns -1 on error;
             check_mem(asprintf(&entry, entry_template, host->url, host->port, response->status, response->payload));
             HttpResponse_free(response);
         } else {

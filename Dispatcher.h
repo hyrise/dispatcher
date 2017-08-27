@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <queue>
 #include <vector>
+#include <map>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -33,9 +34,8 @@ public:
     void add_host(const char *url, int port);
     void remove_host(const char *url, int port);
     void handle_connection(int client_socket);
+    void send_to_db_node(struct HttpRequest *request, int client_socket, std::map<std::string, int> *connections, int node_offset);
     void send_to_all(struct HttpRequest *request, int client_socket);
-    void send_to_next_node(struct HttpRequest *request, int client_socket);
-    void send_to_master(struct HttpRequest *request, int client_socket);
 };
 
 #endif  // DISPATCHER_H_
