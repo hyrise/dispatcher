@@ -446,6 +446,7 @@ const char *http_reason_phrase(int response_status) {
 
 int http_send_request(int sockfd, struct HttpRequest *request) {
     debug("http_send_request");
+    assert(request != NULL);
     assert(request->method != NULL);
     assert(request->resource != NULL);
     assert(request->version != NULL);
@@ -480,14 +481,17 @@ Content-Length: %d\r\n\r\n\
 
 int http_send_response(int sockfd, struct HttpResponse *response) {
     debug("http_send_response");
-    int status = (response != NULL) ? response->status : 500;
-    int content_length = (response != NULL) ? response->content_length : 0;
-    const char *payload = (response != NULL) ? response->payload : "";
+    assert(response != NULL);
+    if (response->payload == NULL) {
+        assert(response->content_length == 0);
+    } else {
+        assert(response->content_length == strlen(response->payload));
+    }
 
     char *buf;
     char http_response[] = "HTTP/1.1 %d %s\r\nContent-Length: %d\r\n\r\n%s";
-    if (asprintf(&buf, http_response, status, http_reason_phrase(status),
-                 content_length, payload) == -1) {
+    if (asprintf(&buf, http_response, response->status, http_reason_phrase(response->status),
+                 response->content_length, response->payload) == -1) {
         log_err("An error occurred while creating response.");
         // TODO
         const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";

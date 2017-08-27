@@ -143,6 +143,7 @@ void *dispatch_handle_connection_wrapper(void *arg) {
 
 void Dispatcher::handle_connection(int client_socket) {
     struct HttpRequest *request;
+    struct HttpResponse *response;
     std::map<std::string, int> connections;
 
     while (TRUE) {
@@ -162,43 +163,68 @@ void Dispatcher::handle_connection(int client_socket) {
         if (strncmp(request->resource, "/add_node/", 10) == 0) {
             char ip[INET_ADDRSTRLEN];
             int port;
+            response = new HttpResponse;
             if (get_ip_from_socket(client_socket, ip) == 0) {
                 port = (int)strtol(request->resource+10, (char **)NULL, 10);
                 if (port == 0) {
                     log_err("/add_node/ - Detecting port");
+                    response->status = 400;
+                    response->payload = strdup("Error while setting adding db_node: unsupported format.");
                 } else {
                     debug("Add host:  %s:%i", ip, port);
                     add_host(ip, port);
+                    response->status = 200;
+                    response->payload = strdup("New host added");
                 }
+            } else {
+                response->status = 500;
+                response->payload = strdup("Error while adding new node: Server cannot detect node IP.");
             }
-            // TODO: Send response
+            response->headers = NULL;
+            response->content_length = strlen(response->payload);
 
         } else if (strncmp(request->resource, "/remove_node/", 13) == 0) {
             char *delimiter = strchr(request->resource, ':');
+            response = new HttpResponse;
             if (delimiter != NULL) {
                 char *ip = strndup(request->resource + 13, delimiter - (request->resource + 13));
                 int port = 0;
                 remove_host(ip, port);
                 free(ip);
+                response->status = 200;
+                response->payload = strdup("Host removed");
+            } else {
+                response->status = 400;
+                response->payload = strdup("Error while setting new master: unsupported format.");
             }
-            // TODO: Send response
+            response->headers = NULL;
+            response->content_length = strlen(response->payload);
 
         } else if (strcmp(request->resource, "/node_info") == 0) {
-            send_node_info(request, client_socket);
+            get_node_info(request, &response);
 
         } else if (strncmp(request->resource, "/new_master/", 12) == 0) {
             char ip[INET_ADDRSTRLEN];
             int port;
+            response = new HttpResponse;
             if (get_ip_from_socket(client_socket, ip) == 0) {
                 port = (int)strtol(request->resource+12, (char **)NULL, 10);
                 if (port == 0) {
                     log_err("/new_master/ - Detecting port");
+                    response->status = 400;
+                    response->payload = strdup("Error while setting new master: unsupported format.");
                 } else {
                     debug("New master:  %s:%i", ip, port);
                     set_master(ip, port);
+                    response->status = 200;
+                    response->payload = strdup("New master set");
                 }
+            } else {
+                response->status = 500;
+                response->payload = strdup("Error while setting new master: Server cannot detect master IP.");
             }
-            // TODO: Send response
+            response->headers = NULL;
+            response->content_length = strlen(response->payload);
 
         } else if (strcmp(request->resource, "/query") == 0) {
             int query_t = query_type(request->payload);
@@ -206,40 +232,43 @@ void Dispatcher::handle_connection(int client_socket) {
                 case READ:
                     static int node_offset = 0;
                     node_offset = (node_offset + 1) % cluster_nodes->size();
-                    send_to_db_node(request, client_socket, &connections, node_offset);
+                    send_to_db_node(request, &connections, node_offset, &response);
                     break;
                 case LOAD:
-                    send_to_all(request, client_socket);
+                    send_to_all(request, &response);
                     break;
                 case WRITE:
                     // send to master node (node_offset=0)
-                    send_to_db_node(request, client_socket, &connections, 0);
+                    send_to_db_node(request, &connections, 0, &response);
                     break;
                 default:
                     log_err("Invalid query: %s", request->payload);
 
-                    struct HttpResponse *response = new HttpResponse;
+                    response = new HttpResponse;
                     response->status = 500;
                     response->payload = strdup("Invalid query");
                     response->content_length = strlen(response->payload);
-                    http_send_response(client_socket, response);
-                    free(response);
             }
         } else if (strcmp(request->resource, "/procedure") == 0) {
             // send to master node (node_offset=0)
-            send_to_db_node(request, client_socket, &connections, 0);
+            send_to_db_node(request, &connections, 0, &response);
         } else {
             log_err("Invalid HTTP resource: %s", request->resource);
 
-            struct HttpResponse *response = new HttpResponse;
+            response = new HttpResponse;
             response->status = 404;
             if (asprintf(&response->payload, "Invalid HTTP resource: %s", request->resource) == -1) {
                 response->payload = strdup("Invalid HTTP resource");
             }
+            response->headers = NULL;
             response->content_length = strlen(response->payload);
-            http_send_response(client_socket, response);
-            free(response);
         }
+
+        debug("Send response to client.");
+        http_send_response(client_socket, response);
+        HttpResponse_free(response);
+        response = NULL;
+
         if (HttpRequest_persistent_connection(request) == TRUE) {
             HttpRequest_free(request);
             continue;
@@ -250,12 +279,14 @@ void Dispatcher::handle_connection(int client_socket) {
         close(client_socket);
         break;
     }
+    // TODO: Close DB sockets in case clients wants to close the connection
 }
 
 
-void Dispatcher::send_node_info(struct HttpRequest *request, int client_socket) {
-    debug("Send node info.");
+void Dispatcher::get_node_info(struct HttpRequest *request, struct HttpResponse **response_ref) {
+    debug("Get node info.");
     char *node_info = (char *)malloc(sizeof(char) * 256 * (cluster_nodes->size()+1));
+    check_mem(node_info);
     char *current_position = node_info;
     char head[] = "{\"hosts\": [ ";     // important whitespace to have valid json for empty list
     strncpy(current_position, head, strlen(head));
@@ -272,18 +303,18 @@ void Dispatcher::send_node_info(struct HttpRequest *request, int client_socket) 
     }
     strcpy(current_position-1 , "]}"); // -1 to overwrite the comma or whitespace
     printf("%s\n", node_info);
+
     struct HttpResponse *response = new HttpResponse;
     response->status = 200;
     response->content_length = strlen(node_info);
+    response->headers = NULL;
     response->payload = node_info;
-
-    http_send_response(client_socket, response);
-    free(node_info);
-    free(response);
+    *response_ref = response;
 }
 
 
-void Dispatcher::send_to_db_node(struct HttpRequest *request, int client_socket, std::map<std::string, int> *connections, int node_offset) {
+void Dispatcher::send_to_db_node(struct HttpRequest *request, std::map<std::string, int> *connections,
+                                 int node_offset, struct HttpResponse **response_ref) {
     int db_socket;
     Host *h = (*cluster_nodes)[node_offset];
 
@@ -302,28 +333,24 @@ void Dispatcher::send_to_db_node(struct HttpRequest *request, int client_socket,
         return;
     }
 
-    struct HttpResponse *response;
-    int http_error = http_receive_response(db_socket, &response);
+    int http_error = http_receive_response(db_socket, response_ref);
     if (http_error != HTTP_SUCCESS) {
         log_err("http error: http_receive_response");
-    }
+        assert(*response_ref == NULL);
 
-    if (response == NULL) {
-        response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
+        // Error on db_request -> We have to build the response object
+        HttpResponse *response = (struct HttpResponse *)malloc(sizeof(struct HttpResponse));
         check_mem(response);
         response->status = 500;
         response->headers = NULL;
         response->payload = strdup("Database request was not successful.");
         response->content_length = strlen(response->payload);
+        *response_ref = response;
     }
-
-    debug("Response to client.");
-    http_send_response(client_socket, response);
-    HttpResponse_free(response);
 }
 
 
-void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
+void Dispatcher::send_to_all(struct HttpRequest *request, struct HttpResponse **response_ref) {
     debug("Load table.");
     char entry_template[] = "{\"host\": \"%s:%d\", \"status\": %d, \"answer\": %s},";
     char *answer = strdup("[ ");    // important whitespace to have valid json for empty list
@@ -348,13 +375,12 @@ void Dispatcher::send_to_all(struct HttpRequest *request, int client_socket) {
     }
 
     strcpy(answer + strlen(answer)-1 , "]"); // -1 to overwrite the comma  or whitespace
-    struct HttpResponse client_response;
-    client_response.status = 200;
-    client_response.content_length = strlen(answer);
-    client_response.payload = answer;
-    http_send_response(client_socket, &client_response);
-
-    free(answer);
+    struct HttpResponse *client_response = new HttpResponse;
+    client_response->status = 200;
+    client_response->content_length = strlen(answer);
+    client_response->headers = NULL;
+    client_response->payload = answer;
+    *response_ref = client_response;
 }
 
 
@@ -456,6 +482,7 @@ void Dispatcher::add_host(const char *url, int port) {
 
 
 void Dispatcher::remove_host(const char *url, int port) {
+    // TODO: Why is the port not used??
     debug("Try to remove host: %s", url);
     size_t i;
     cluster_nodes_mutex.lock();

@@ -25,7 +25,7 @@ private:
     Dispatcher( const Dispatcher& other ); // non construction-copyable
     Dispatcher& operator=( const Dispatcher& ); // non copyable
 
-    void send_node_info(struct HttpRequest *request, int client_socket);
+    void get_node_info(struct HttpRequest *request, struct HttpResponse **response_ref);
     
 public:
     Dispatcher(char *port, char *settings_file);
@@ -34,8 +34,9 @@ public:
     void add_host(const char *url, int port);
     void remove_host(const char *url, int port);
     void handle_connection(int client_socket);
-    void send_to_db_node(struct HttpRequest *request, int client_socket, std::map<std::string, int> *connections, int node_offset);
-    void send_to_all(struct HttpRequest *request, int client_socket);
+    void send_to_db_node(struct HttpRequest *request, std::map<std::string, int> *connections,
+                         int node_offset, struct HttpResponse **response_ref);
+    void send_to_all(struct HttpRequest *request, struct HttpResponse **response_ref);
 };
 
 #endif  // DISPATCHER_H_
