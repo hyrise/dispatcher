@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <signal.h>
+#include <string.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -72,7 +73,10 @@ Content-Length: %d\r\n\r\n\
 #endif
 
 #ifdef NO_HTTP_LIB
-        read(socket, buf, BUFFERSIZE);
+        ssize_t n = read(socket, buf, BUFFERSIZE);
+        char *new_str = strndup(buf, n);
+        debug("RECEIVED %zd: %s\n", n, new_str);
+        free(new_str);
 #else
         if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
             log_err("http error on response %d\n", http_error);
@@ -86,7 +90,9 @@ Content-Length: %d\r\n\r\n\
             exit(-1);
         } else {
             debug("Received: %s", response->payload);
+#ifndef NDEBUG
             HttpResponse_print(response);
+#endif
             success_counter += 1;
             HttpResponse_free(response);
         }
