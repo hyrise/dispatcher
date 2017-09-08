@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
+#include "http-parser/http_parser.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -26,6 +27,19 @@ int num_queries = 1;
 unsigned timediff(struct timeval start,  struct timeval stop) {
     return (stop.tv_usec - start.tv_usec) + (stop.tv_sec - start.tv_sec) * 1000 * 1000;
 }
+
+
+// http-parser call back
+int message_complete_callback(http_parser *parser) {
+    debug("message_complete_callback");
+    if (http_should_keep_alive(parser) == 0) {
+        close((int)parser->data);
+    }
+    return 0;
+}
+
+
+
 
 struct query_hyrise_arg {
     struct Host *host;
@@ -49,6 +63,16 @@ Content-Length: %d\r\n\r\n\
         log_err("An error occurred while creating response.");
         exit(-1);
     }
+
+    // http-parser
+    http_parser_settings settings;
+    settings.on_message_complete = message_complete_callback;
+
+    http_parser * parser = malloc(sizeof(http_parser));
+    http_parser_init(parser, HTTP_RESPONSE);
+    parser->data = (void *)socket;
+
+
 #else
     int success_counter = 0;
     struct HttpResponse *response;
@@ -74,9 +98,19 @@ Content-Length: %d\r\n\r\n\
 
 #ifdef NO_HTTP_LIB
         ssize_t n = read(socket, buf, BUFFERSIZE);
+
+        if (n < 0) {
+            // Handle Error
+            log_err("Error on read()");
+            exit(-1);
+        }
+
         char *new_str = strndup(buf, n);
         debug("RECEIVED %zd: %s\n", n, new_str);
         free(new_str);
+
+        size_t nparsed = http_parser_execute(parser, &settings, buf, n);
+
 #else
         if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
             log_err("http error on response %d\n", http_error);

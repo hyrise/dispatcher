@@ -1,4 +1,4 @@
-OBJS = Dispatcher.o jsoncpp.o
+OBJS = Dispatcher.o jsoncpp.o http-parser/http_parser.o
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -g -O3
 CFLAGS = -Wall -g -O3
@@ -19,8 +19,8 @@ hyrise_mock : http.o hyrise_mock.c
 hyrise_mock2 : http.o hyrise_mock2.c
 	cc http.o dict.o hyrise_mock2.c -o hyrise_mock2 $(CFLAGS) $(LDLIBS)
 
-query_hyrise : http.o query_hyrise.o
-	cc -D_GNU_SOURCE http.o dict.o query_hyrise.o -o query_hyrise $(CFLAGS) $(LDLIBS) -pg
+query_hyrise : http.o query_hyrise.o http-parser/http_parser.o
+	cc -D_GNU_SOURCE http.o dict.o http-parser/http_parser.o query_hyrise.o -o query_hyrise $(CFLAGS) $(LDLIBS) -pg
 
 query_hyrise.o: query_hyrise.c http.h
 	cc -D_GNU_SOURCE -c query_hyrise.c $(CFLAGS) -pg
@@ -37,5 +37,10 @@ dict_test: dict.o dict_test.c
 jsoncpp.o : jsoncpp/jsoncpp.cpp jsoncpp/json.h
 	$(CXX) -c jsoncpp/jsoncpp.cpp $(CXXFLAGS) -I $(INCLUDEPATHS)
 
+http-parser/http_parser.o:
+	make -C http-parser http_parser.o
+
+.PHONY: clean
 clean:
 	rm *.o start_dispatcher hyrise_mock hyrise_mock2 query_hyrise dict_test simple_dispatcher
+	make clean -C http-parser
