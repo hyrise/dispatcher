@@ -13,8 +13,8 @@ simple_dispatcher: http.o simple_dispatcher.c
 start_dispatcher : $(OBJS) http.o main.cpp
 	$(CXX) main.cpp $(OBJS) dict.o http.o -o start_dispatcher $(CXXFLAGS) $(LDLIBS)
 
-hyrise_mock : http.o hyrise_mock.c
-	cc http.o dict.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
+hyrise_mock : http.o hyrise_mock.c http-parser/http_parser.o
+	cc http.o dict.o http-parser/http_parser.o hyrise_mock.c -o hyrise_mock $(CFLAGS) $(LDLIBS)
 
 hyrise_mock2 : http.o hyrise_mock2.c
 	cc http.o dict.o hyrise_mock2.c -o hyrise_mock2 $(CFLAGS) $(LDLIBS)

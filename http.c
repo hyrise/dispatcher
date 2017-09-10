@@ -118,7 +118,9 @@ int http_create_inet_socket(const char *port) {
 
 int http_read_line(int sockfd, char **line) {
     *line  = NULL;
-    char *buf = (char *)malloc(sizeof(char) * BUFFERSIZE);
+    const size_t BUFFERSIZE = 1024;
+    char buf[BUFFERSIZE];
+
     check_mem(buf);
     size_t buf_offset = 0;  // total received bytes
     int got_cr = 0;
@@ -139,8 +141,12 @@ int http_read_line(int sockfd, char **line) {
             }
         }
         buf_offset += recv_size;
+        if (buf_offset == BUFFERSIZE) {
+            buf[BUFFERSIZE - 1] = '\0';
+            log_err("Receive buffer is full:\n\tReceived: %s", buf);
+            return -1;
+        }
     }
-    free(buf);
     if (*line != NULL) {
         debug("Receive line: %s", *line);
         return 0;
@@ -269,6 +275,7 @@ int http_receive_headers(int sockfd, struct dict *headers) {
 
 
 int http_receive_payload(int sockfd, char **payload, int content_length) {
+    assert(content_length > 0);
     *payload = NULL;
     ssize_t recv_size = 0;
     *payload = (char *)calloc(sizeof(char), content_length + 1);
@@ -481,17 +488,21 @@ Content-Length: %d\r\n\r\n\
 
 int http_send_response(int sockfd, struct HttpResponse *response) {
     debug("http_send_response");
+    char *payload = NULL;
+
     assert(response != NULL);
     if (response->payload == NULL) {
         assert(response->content_length == 0);
+        payload = "";
     } else {
         assert(response->content_length == strlen(response->payload));
+        payload = response->payload;
     }
 
     char *buf;
     char http_response[] = "HTTP/1.1 %d %s\r\nContent-Length: %d\r\n\r\n%s";
     if (asprintf(&buf, http_response, response->status, http_reason_phrase(response->status),
-                 response->content_length, response->payload) == -1) {
+                 response->content_length, payload) == -1) {
         log_err("An error occurred while creating response.");
         // TODO
         const char* error_response = "HTTP/1.1 500 ERROR\r\n\r\n";
@@ -504,6 +515,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
         }
     }
     else {
+        debug("Send: %s\n", buf);
         if (send_all(sockfd, buf, strlen(buf), 0) == -1) {
             free(buf);
             if (errno == EPIPE) {
@@ -527,6 +539,7 @@ int HttpRequest_persistent_connection(struct HttpRequest *request) {
     } else if (strncmp(request->version, "1.1", 3) == 0 && connection_type != NULL && strncasecmp(connection_type, "close", 5) != 0) {
         return TRUE;
     }
+    debug("No persistent connection.");
     return FALSE;
 }
 

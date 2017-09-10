@@ -14,14 +14,14 @@
 
 #include "dbg.h"
 
-#define BUFFER_SIZE 16384
+#define BUFFERSIZE 16384
 
 int num_threads = 1;
 int num_queries = 1;
 
 
 // http_receive_response reads data bype per byte for HTTP parsing, which is really slow
-//#define NO_HTTP_LIB
+#define NO_HTTP_LIB
 
 
 unsigned timediff(struct timeval start,  struct timeval stop) {
@@ -106,10 +106,16 @@ Content-Length: %d\r\n\r\n\
         }
 
         char *new_str = strndup(buf, n);
-        debug("RECEIVED %zd: %s\n", n, new_str);
+        debug("RECEIVED %zd: '''%s'''", n, new_str);
         free(new_str);
 
         size_t nparsed = http_parser_execute(parser, &settings, buf, n);
+        debug("http-parser return code: %zu\n", nparsed);
+        if (nparsed != n) {
+            log_err("%s\n", http_errno_name(parser->http_errno));
+            log_err("%s\n", http_errno_description(parser->http_errno));
+            exit(-1);
+        }
 
 #else
         if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
@@ -123,7 +129,7 @@ Content-Length: %d\r\n\r\n\
             }
             exit(-1);
         } else {
-            debug("Received: %s", response->payload);
+            debug("RECEIVED: '''%s'''", response->payload);
 #ifndef NDEBUG
             HttpResponse_print(response);
 #endif
@@ -155,7 +161,7 @@ int main(int argc, char *argv[]) {
     num_threads = atoi(argv[4]);
     char *file_name = argv[5];
 
-    char query[BUFFER_SIZE];
+    char query[BUFFERSIZE];
 
     FILE *f = fopen(file_name, "r");
     if (f == NULL) {
@@ -163,7 +169,7 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
     strncpy(query, "query=", strlen("query="));
-    size_t s = fread(&query[6], sizeof(char), BUFFER_SIZE-6, f);
+    size_t s = fread(&query[6], sizeof(char), BUFFERSIZE-6, f);
 
     if (ferror(f)) {
         printf("ERROR reading query file\n");
