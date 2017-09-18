@@ -1,5 +1,8 @@
 start_dispatcher
 query_hyrise
 hyrise_mock
+hyrise_mock2
 settings*.json
 *.o
+.DS_Store
+*.dSYM

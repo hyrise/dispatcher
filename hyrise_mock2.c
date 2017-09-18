@@ -18,6 +18,8 @@
 #define CLIENT_CONNECTION 0
 #define DB_CONNECTION 1
 
+#define BUFFERSIZE 1024
+
 
 struct connection {
     int type;

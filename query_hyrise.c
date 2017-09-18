@@ -6,25 +6,40 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <signal.h>
+#include <string.h>
+#include "http-parser/http_parser.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
 
 #include "dbg.h"
 
-#define BUFFER_SIZE 16384
+#define BUFFERSIZE 16384
 
 int num_threads = 1;
 int num_queries = 1;
 
 
 // http_receive_response reads data bype per byte for HTTP parsing, which is really slow
-//#define NO_HTTP_LIB
+#define NO_HTTP_LIB
 
 
 unsigned timediff(struct timeval start,  struct timeval stop) {
     return (stop.tv_usec - start.tv_usec) + (stop.tv_sec - start.tv_sec) * 1000 * 1000;
 }
+
+
+// http-parser call back
+int message_complete_callback(http_parser *parser) {
+    debug("message_complete_callback");
+    if (http_should_keep_alive(parser) == 0) {
+        close((int)parser->data);
+    }
+    return 0;
+}
+
+
+
 
 struct query_hyrise_arg {
     struct Host *host;
@@ -48,6 +63,16 @@ Content-Length: %d\r\n\r\n\
         log_err("An error occurred while creating response.");
         exit(-1);
     }
+
+    // http-parser
+    http_parser_settings settings;
+    settings.on_message_complete = message_complete_callback;
+
+    http_parser * parser = malloc(sizeof(http_parser));
+    http_parser_init(parser, HTTP_RESPONSE);
+    parser->data = (void *)socket;
+
+
 #else
     int success_counter = 0;
     struct HttpResponse *response;
@@ -72,7 +97,26 @@ Content-Length: %d\r\n\r\n\
 #endif
 
 #ifdef NO_HTTP_LIB
-        read(socket, buf, BUFFERSIZE);
+        ssize_t n = read(socket, buf, BUFFERSIZE);
+
+        if (n < 0) {
+            // Handle Error
+            log_err("Error on read()");
+            exit(-1);
+        }
+
+        char *new_str = strndup(buf, n);
+        debug("RECEIVED %zd: '''%s'''", n, new_str);
+        free(new_str);
+
+        size_t nparsed = http_parser_execute(parser, &settings, buf, n);
+        debug("http-parser return code: %zu\n", nparsed);
+        if (nparsed != n) {
+            log_err("%s\n", http_errno_name(parser->http_errno));
+            log_err("%s\n", http_errno_description(parser->http_errno));
+            exit(-1);
+        }
+
 #else
         if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
             log_err("http error on response %d\n", http_error);
@@ -85,8 +129,10 @@ Content-Length: %d\r\n\r\n\
             }
             exit(-1);
         } else {
-            debug("Received: %s", response->payload);
+            debug("RECEIVED: '''%s'''", response->payload);
+#ifndef NDEBUG
             HttpResponse_print(response);
+#endif
             success_counter += 1;
             HttpResponse_free(response);
         }
@@ -115,7 +161,7 @@ int main(int argc, char *argv[]) {
     num_threads = atoi(argv[4]);
     char *file_name = argv[5];
 
-    char query[BUFFER_SIZE];
+    char query[BUFFERSIZE];
 
     FILE *f = fopen(file_name, "r");
     if (f == NULL) {
@@ -123,7 +169,7 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
     strncpy(query, "query=", strlen("query="));
-    size_t s = fread(&query[6], sizeof(char), BUFFER_SIZE-6, f);
+    size_t s = fread(&query[6], sizeof(char), BUFFERSIZE-6, f);
 
     if (ferror(f)) {
         printf("ERROR reading query file\n");

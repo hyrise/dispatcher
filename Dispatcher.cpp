@@ -231,7 +231,7 @@ void Dispatcher::handle_connection(int client_socket) {
             node_offset = (node_offset + 1) % cluster_nodes->size();
             send_to_db_node(request, &connections, node_offset, &response);
 
-        } else if (strcmp(request->resource, "/query") == 0) {
+        } else if (strncmp(request->resource, "/query", 6) == 0) {
             int query_t = query_type(request->payload);
             switch(query_t) {
                 case READ:
@@ -438,7 +438,7 @@ void Dispatcher::start() {
             log_err("Error: on accept.");
             throw "Error: on accept.";
         }
-        debug("Main: new request.");
+        debug("Main: new connection.");
         pthread_t thread;
         struct thread_arg *ta = (struct thread_arg *)malloc(sizeof(struct thread_arg));
         ta->dispatcher = this;
