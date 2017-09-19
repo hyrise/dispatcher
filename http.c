@@ -99,6 +99,7 @@ int http_open_connection(const char *url, int port) {
 
 
 int http_create_inet_socket(const char *port) {
+    static const u_int one = 1;
     int sock_fd, s;
 
     struct addrinfo hints, *res;
@@ -113,6 +114,11 @@ int http_create_inet_socket(const char *port) {
 
     if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         log_err("Error: Can't create socket.");
+        exit(-1);
+    }
+
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) < 0) {
+        log_err("Error: Can't set SO_REUSEADDR.");
         exit(-1);
     }
 
