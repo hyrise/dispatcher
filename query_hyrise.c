@@ -105,9 +105,7 @@ Content-Length: %d\r\n\r\n\
             exit(-1);
         }
 
-        char *new_str = strndup(buf, n);
-        debug("RECEIVED %zd: '''%s'''", n, new_str);
-        free(new_str);
+        debug("RECEIVED %zd: '''%.*s'''", n, (int)n, buf);
 
         size_t nparsed = http_parser_execute(parser, &settings, buf, n);
         debug("http-parser return code: %zu\n", nparsed);
