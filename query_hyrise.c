@@ -1,4 +1,4 @@
-#include "http.h"
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -7,12 +7,12 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
-#include "http-parser/http_parser.h"
-
 #include <sys/types.h>
 #include <sys/socket.h>
 
 #include "dbg.h"
+#include "http.h"
+#include "http-parser/http_parser.h"
 
 #define BUFFERSIZE 16384
 
@@ -20,127 +20,113 @@ int num_threads = 1;
 int num_queries = 1;
 
 
-// http_receive_response reads data bype per byte for HTTP parsing, which is really slow
-#define NO_HTTP_LIB
-
 
 unsigned timediff(struct timeval start,  struct timeval stop) {
     return (stop.tv_usec - start.tv_usec) + (stop.tv_sec - start.tv_sec) * 1000 * 1000;
 }
 
 
+struct response_parser_data {
+    int db_socket;
+    int remaining_queries;
+    const char *http_msg;
+};
+
+
 // http-parser call back
 int message_complete_callback(http_parser *parser) {
     debug("message_complete_callback");
+    struct response_parser_data *data = (struct response_parser_data *)parser->data;
+
+    data->remaining_queries--;
+
     if (http_should_keep_alive(parser) == 0) {
-        close((int)parser->data);
+        close(data->db_socket);
+        log_err("Server wants to close connection.");
+        exit(EXIT_FAILURE);
     }
+
+    if (data->remaining_queries > 0) {
+        send_all(data->db_socket, data->http_msg, strlen(data->http_msg), 0);
+    }
+
     return 0;
 }
 
 
 
-
 struct query_hyrise_arg {
-    struct Host *host;
-    struct HttpRequest *request;
+    const char *url;
+    int port;
+    const char *query;
 };
 
 
 void *query_hyrise(void *arg) {
-    int i;
     struct query_hyrise_arg *qha = (struct query_hyrise_arg *)arg;
-    int socket = http_open_connection(qha->host->url, qha->host->port);
+    const char *url = qha->url;
+    int port = qha->port;
+    const char *query = qha->query;
+    int socket = http_open_connection(url, port);
+    if (socket == -1) {
+        exit(EXIT_FAILURE);
+    }
 
-#ifdef NO_HTTP_LIB
     char buf[BUFFERSIZE];
     char http_post[] = "POST %s HTTP/1.1\r\n\
 Content-Length: %d\r\n\r\n\
 %s";
     char *buf_s;
-    int allocatedBytes = asprintf(&buf_s, http_post, "/query", qha->request->content_length, qha->request->payload);
+    int allocatedBytes = asprintf(&buf_s, http_post, "/query", strlen(query), query);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
+
+    struct response_parser_data parser_data;
+    parser_data.db_socket = socket;
+    parser_data.remaining_queries = num_queries/num_threads;
+    parser_data.http_msg = buf_s;
 
     // http-parser
     http_parser_settings settings;
     settings.on_message_complete = message_complete_callback;
 
-    http_parser * parser = malloc(sizeof(http_parser));
+    http_parser *parser = malloc(sizeof(http_parser));
     http_parser_init(parser, HTTP_RESPONSE);
-    parser->data = (void *)socket;
+    parser->data = (void *)&parser_data;
 
 
-#else
-    int success_counter = 0;
-    struct HttpResponse *response;
-    int http_error = HTTP_SUCCESS;
-#endif
+    send_all(socket, buf_s, strlen(buf_s), 0);
 
-    for (i = 0; i < num_queries/num_threads; ++i) {
-
-#ifdef NO_HTTP_LIB
-        send_all(socket, buf_s, strlen(buf_s), 0);
-#else
-        if ((http_error = http_send_request(socket, qha->request)) != HTTP_SUCCESS) {
-            log_err("Error on send request\n");
-            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-                i -= 1;
-                close(socket);
-                socket = http_open_connection(qha->host->url, qha->host->port);
-                continue;
-            }
-            exit(-1);
-        }
-#endif
-
-#ifdef NO_HTTP_LIB
+    while (1) {
         ssize_t n = read(socket, buf, BUFFERSIZE);
-
         if (n < 0) {
             // Handle Error
             log_err("Error on read()");
-            exit(-1);
+            exit(EXIT_FAILURE);
+
+        } else if (n == 0) {
+            // Connection closed
+            log_err("Connection was closed by database.");
+            exit(EXIT_FAILURE);
         }
 
         debug("RECEIVED %zd: '''%.*s'''", n, (int)n, buf);
 
         size_t nparsed = http_parser_execute(parser, &settings, buf, n);
-        debug("http-parser return code: %zu\n", nparsed);
         if (nparsed != n) {
             log_err("%s\n", http_errno_name(parser->http_errno));
             log_err("%s\n", http_errno_description(parser->http_errno));
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
-
-#else
-        if ((http_error = http_receive_response(socket, &response)) != HTTP_SUCCESS) {
-            log_err("http error on response %d\n", http_error);
-            if (http_error == ERR_EOF || http_error == ERR_BROKEN_PIPE || http_error == ERR_CONNECTION_RESET) {
-                debug("Unexpected Connection close. Retry..");
-                i -= 1;
-                close(socket);
-                socket = http_open_connection(qha->host->url, qha->host->port);
-                continue;
-            }
-            exit(-1);
-        } else {
-            debug("RECEIVED: '''%s'''", response->payload);
-#ifndef NDEBUG
-            HttpResponse_print(response);
-#endif
-            success_counter += 1;
-            HttpResponse_free(response);
+        if (parser_data.remaining_queries < 1) {
+            break;
         }
-#endif
     }
 
-#ifdef NO_HTTP_LIB
     free(buf_s);
-#endif
-
+    free(parser);
     close(socket);
     return NULL;
 }
@@ -154,7 +140,7 @@ int main(int argc, char *argv[]) {
     }
 
     char *url = argv[1];
-    char *port = argv[2];
+    int port = atoi(argv[2]);
     num_queries = atoi(argv[3]);
     num_threads = atoi(argv[4]);
     char *file_name = argv[5];
@@ -168,30 +154,24 @@ int main(int argc, char *argv[]) {
     }
     strncpy(query, "query=", strlen("query="));
     size_t s = fread(&query[6], sizeof(char), BUFFERSIZE-6, f);
+    if (s == BUFFERSIZE-6) {
+        log_err("Buffer to small.");
+        exit(EXIT_FAILURE);
+    }
 
     if (ferror(f)) {
         printf("ERROR reading query file\n");
-        return -1;
+        exit(EXIT_FAILURE);
     } else {
         query[s + 6] = '\0';
     }
-
     fclose(f);
 
-    struct Host h;
-    h.url = url;
-    h.port = atoi(port);
-
-    struct HttpRequest r;
-    r.method = "POST";
-    r.resource = "/query";
-    r.version = "1.1";
-    r.content_length = strlen(query);
-    r.payload = query;
 
     struct query_hyrise_arg arg;
-    arg.host = &h;
-    arg.request = &r;
+    arg.url = url;
+    arg.port = port;
+    arg.query = query;
 
     int i;
     pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
