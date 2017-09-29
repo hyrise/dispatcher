@@ -463,20 +463,23 @@ void Dispatcher::handle_connection(int client_socket) {
     while (TRUE) {
         read_fd_set = active_fd_set;
         debug("select");
-        if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, NULL) < 0) {
+        int n = select(FD_SETSIZE, &read_fd_set, NULL, NULL, NULL);
+        if (n < 0) {
             perror ("select");
             exit(EXIT_FAILURE);
         }
-
         /* Service all the sockets with input pending. */
         int i;
-
         for (i = 0; i < FD_SETSIZE; ++i) {
-            if (FD_ISSET (i, &read_fd_set)) {
+            if (n == 0) {
+                // no more ready file descriptors
+                break;
+            }
+            if (FD_ISSET(i, &read_fd_set)) {
+                n--;
                 if (i == client_socket) {
                     /* new data on client socket. */
                     debug("New data on client socket.");
-
                     ssize_t data_size;
                     data_size = read(client_socket, request_data->buffer + request_data->buffer_offset, BUFFER_SIZE - request_data->buffer_offset);
 
@@ -638,19 +641,20 @@ void Dispatcher::send_to_db_node_async(struct request_parser_data *data, int nod
     h->total_queries += 1;
 
 
-    char http_request[] = "POST %.*s HTTP/1.1\r\nContent-Length: %lu\r\n\r\n";
-    char write_buffer[1024];
-    sprintf(write_buffer, http_request, data->url_length, data->url_start, data->payload_length);
+    char http_request[] = "POST %.*s HTTP/1.1\r\nContent-Length: %lu\r\n\r\n%.*s";
+    char write_buffer[10240];
+    sprintf(write_buffer, http_request, data->url_length, data->url_start, data->payload_length, data->payload_length, data->payload_start);
 
     ssize_t send_size = send_all(db_socket , write_buffer, strlen(write_buffer), 0);
     if (send_size != strlen(write_buffer)) {
         log_err("send_size != data_size");
     }
-    send_size = send_all(db_socket, data->payload_start, data->payload_length, 0);
-    if (send_size != data->payload_length) {
-        log_err("send_size != data_size");
-    }
-    debug("SEND: '''%.*s'''(%lu)", (int)send_size, data->payload_start, send_size);
+    debug("SEND: '''%s'''(%lu)", write_buffer, strlen(write_buffer));
+    // send_size = send_all(db_socket, data->payload_start, data->payload_length, 0);
+    // if (send_size != data->payload_length) {
+    //     log_err("send_size != data_size");
+    // }
+    // debug("SEND: '''%.*s'''(%lu)", (int)send_size, data->payload_start, send_size);
 
 }
 

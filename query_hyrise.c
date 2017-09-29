@@ -56,18 +56,16 @@ int message_complete_callback(http_parser *parser) {
 
 
 struct query_hyrise_arg {
-    const char *url;
+    const char *host;
     int port;
+    const char *resource;
     const char *query;
 };
 
 
 void *query_hyrise(void *arg) {
     struct query_hyrise_arg *qha = (struct query_hyrise_arg *)arg;
-    const char *url = qha->url;
-    int port = qha->port;
-    const char *query = qha->query;
-    int socket = http_open_connection(url, port);
+    int socket = http_open_connection(qha->host, qha->port);
     if (socket == -1) {
         exit(EXIT_FAILURE);
     }
@@ -77,7 +75,7 @@ void *query_hyrise(void *arg) {
 Content-Length: %d\r\n\r\n\
 %s";
     char *buf_s;
-    int allocatedBytes = asprintf(&buf_s, http_post, "/query", strlen(query), query);
+    int allocatedBytes = asprintf(&buf_s, http_post, qha->resource, strlen(qha->query), qha->query);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
         exit(EXIT_FAILURE);
@@ -134,16 +132,17 @@ Content-Length: %d\r\n\r\n\
 
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
-    if (argc != 6) {
-        printf("USAGE: ./query_hyrise HOST PORT NUM_QUERIES NUM_THREADS FILE\n");
+    if (argc != 7) {
+        printf("USAGE: ./query_hyrise HOST PORT RESOURCE NUM_QUERIES NUM_THREADS FILE\n");
         return -1;
     }
 
-    char *url = argv[1];
+    char *host = argv[1];
     int port = atoi(argv[2]);
-    num_queries = atoi(argv[3]);
-    num_threads = atoi(argv[4]);
-    char *file_name = argv[5];
+    char *resource = argv[3];
+    num_queries = atoi(argv[4]);
+    num_threads = atoi(argv[5]);
+    char *file_name = argv[6];
 
     char query[BUFFERSIZE];
 
@@ -169,8 +168,9 @@ int main(int argc, char *argv[]) {
 
 
     struct query_hyrise_arg arg;
-    arg.url = url;
+    arg.host = host;
     arg.port = port;
+    arg.resource = resource;
     arg.query = query;
 
     int i;
