@@ -500,7 +500,7 @@ void Dispatcher::handle_connection(int client_socket) {
                         exit(EXIT_FAILURE);
                     }
 
-                    if (data_size == 0) {
+                    if (data_size == 0 || (data_size < 0 && errno == ECONNRESET)) {
                         log_err("Connection closed by client");
                         close(client_socket);
                         FD_CLR (client_socket, &active_fd_set);
