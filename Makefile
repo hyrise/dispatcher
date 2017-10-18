@@ -10,7 +10,7 @@ all: start_dispatcher hyrise_mock query_hyrise dict_test simple_dispatcher hyris
 simple_dispatcher: http.o simple_dispatcher.c
 	cc http.o dict.o simple_dispatcher.c -o simple_dispatcher $(CFLAGS) $(LDLIBS)
 
-start_dispatcher : $(OBJS) http.o main.cpp
+start_dispatcher : $(OBJS) http.o main.cpp http-parser/http_parser.o
 	$(CXX) main.cpp $(OBJS) dict.o http.o -o start_dispatcher $(CXXFLAGS) $(LDLIBS)
 
 hyrise_mock : http.o hyrise_mock.c http-parser/http_parser.o

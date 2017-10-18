@@ -44,6 +44,8 @@ struct HttpResponse {
 ssize_t send_all(int socket, const void *buffer, size_t length, int flags);
 ssize_t read_all(int socket, void *buffer, size_t length);
 
+
+const char *http_reason_phrase(int response_status);
 int http_create_inet_socket(const char *port);
 int http_open_connection(const char *url, int port);
 int http_receive_request(int sockfd, struct HttpRequest **request_ref);

@@ -86,7 +86,7 @@ int on_message_complete_callback(http_parser *parser) {
         log_err("send_size != data_size");
     }
     debug("SEND: '''%s'''", write_buffer);
-    send_size = send_all(data->socket , message, payload_size, 0);
+    send_size = send_all(data->socket, message, payload_size, 0);
     if (send_size != payload_size) {
         log_err("send_size != data_size");
     }
@@ -135,7 +135,7 @@ void start_hyrise_mock(const char *port) {
         socklen_t size;
 
 
-         for (i = 0; i < FD_SETSIZE; ++i) {
+        for (i = 0; i < FD_SETSIZE; ++i) {
             if (FD_ISSET (i, &read_fd_set)) {
                 if (i == db_socket) {
                     /* Connection request on DB socket. */
@@ -188,15 +188,13 @@ void start_hyrise_mock(const char *port) {
                             continue;
                         }
                     }
+                    debug("Received '''%.*s'''(%lu)", (int)data_size, buffer, data_size);
                     size_t nparsed = http_parser_execute(parsers[i], &settings, buffer, data_size);
                     if (nparsed != data_size) {
                         log_err("%s\n", http_errno_name(parsers[i]->http_errno));
                         log_err("%s\n", http_errno_description(parsers[i]->http_errno));
                         exit(-1);
                     }
-
-                    buffer[data_size] = '\0';
-                    debug("%s\n", buffer);
 
 
                     // struct HttpRequest *r;
