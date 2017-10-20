@@ -193,7 +193,7 @@ void start_hyrise_mock(const char *port) {
                     if (nparsed != data_size) {
                         log_err("%s\n", http_errno_name(parsers[i]->http_errno));
                         log_err("%s\n", http_errno_description(parsers[i]->http_errno));
-                        exit(-1);
+                        exit(EXIT_FAILURE);
                     }
 
 

@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include "dbg.h"
 #include "dict.h"
 
@@ -94,6 +95,12 @@ int http_open_connection(const char *url, int port) {
         return -1;
     }
 
+    int i = 1;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (void *)&i, sizeof(i)) != 0) {
+        log_err("Could not set socketoption TCP_NODELAY");
+        exit(EXIT_FAILURE);
+    };
+
     return sock;
 }
 
@@ -109,28 +116,33 @@ int http_create_inet_socket(const char *port) {
     hints.ai_flags = AI_PASSIVE;
     if ((s = getaddrinfo(NULL, port, &hints, &res)) != 0) {
         log_err("Error getaddrinfo: %s", gai_strerror(s));
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if ((sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         log_err("Error: Can't create socket.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) < 0) {
         log_err("Error: Can't set SO_REUSEADDR.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
+    int i = 1;
+    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_NODELAY, (void *)&i, sizeof(i)) != 0) {
+        log_err("Could not set socketoption TCP_NODELAY");
+        exit(EXIT_FAILURE);
+    };
+
     if (bind(sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
-        close(sock_fd);
         log_err("Error: can't bind to socket.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (listen(sock_fd, MAXPENDING) < 0) {
         log_err("Error: can't listen to socket.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     freeaddrinfo(res);
     return sock_fd;
@@ -159,7 +171,7 @@ int http_read_line(int sockfd, char **line) {
                 return ERR_CONNECTION_RESET;
             default:
                 log_err("Error on read.");
-                exit(1);
+                exit(EXIT_FAILURE);
             }
         } else if (recv_size == 0) {
             if (buf_offset == 0)
@@ -506,7 +518,7 @@ Content-Length: %d\r\n\r\n\
         request->version, request->content_length, payload);
     if (allocatedBytes == -1) {
         log_err("An error occurred while creating response.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     ssize_t sent_bytes;
     if ((sent_bytes = send_all(sockfd, buf, strlen(buf), 0)) == -1) {
@@ -518,7 +530,7 @@ Content-Length: %d\r\n\r\n\
             return ERR_BROKEN_PIPE;
         }
         log_err("Send request.");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     if (sent_bytes != strlen(buf)) {
         log_err("ERROR: send was short. %zd of %lu bytes", sent_bytes, strlen(buf));
@@ -559,7 +571,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
                 return ERR_BROKEN_PIPE;
             }
             log_err("Send response.");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
     }
     else {
@@ -575,7 +587,7 @@ int http_send_response(int sockfd, struct HttpResponse *response) {
                 return ERR_BROKEN_PIPE;
             }
             log_err("Send response.");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
         free(buf);
     }
