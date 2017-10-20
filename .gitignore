@@ -3,6 +3,8 @@ query_hyrise
 hyrise_mock
 hyrise_mock2
 settings*.json
+dict_test
+simple_dispatcher
 *.o
 .DS_Store
 *.dSYM

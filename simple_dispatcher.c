@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
 
     char buffer[1024];
     ssize_t data_size;
-    ssize_t offset = 0;
+    // ssize_t offset = 0;
 
     while (1) {
         read_fd_set = active_fd_set;

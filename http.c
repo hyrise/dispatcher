@@ -156,7 +156,7 @@ int http_read_line(int sockfd, char **line) {
 
     check_mem(buf);
     size_t buf_offset = 0;  // total received bytes
-    size_t recv_size;
+    ssize_t recv_size;
     int got_cr = 0;
 
     while (TRUE) {
