@@ -82,7 +82,7 @@ int on_message_complete_callback(http_parser *parser) {
     // }
 
     ssize_t send_size = send_all(data->socket , write_buffer, strlen(write_buffer), 0);
-    if (send_size != strlen(write_buffer)) {
+    if (send_size != (ssize_t)strlen(write_buffer)) {
         log_err("send_size != data_size");
     }
     debug("SEND: '''%s'''", write_buffer);
@@ -190,7 +190,7 @@ void start_hyrise_mock(const char *port) {
                     }
                     debug("Received '''%.*s'''(%lu)", (int)data_size, buffer, data_size);
                     size_t nparsed = http_parser_execute(parsers[i], &settings, buffer, data_size);
-                    if (nparsed != data_size) {
+                    if ((ssize_t)nparsed != data_size) {
                         log_err("%s\n", http_errno_name(parsers[i]->http_errno));
                         log_err("%s\n", http_errno_description(parsers[i]->http_errno));
                         exit(EXIT_FAILURE);

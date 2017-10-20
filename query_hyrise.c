@@ -113,7 +113,7 @@ Content-Length: %d\r\n\r\n\
         debug("RECEIVED %zd: '''%.*s'''", n, (int)n, buf);
 
         size_t nparsed = http_parser_execute(parser, &settings, buf, n);
-        if (nparsed != n) {
+        if ((ssize_t)nparsed != n) {
             log_err("%s\n", http_errno_name(parser->http_errno));
             log_err("%s\n", http_errno_description(parser->http_errno));
             exit(EXIT_FAILURE);

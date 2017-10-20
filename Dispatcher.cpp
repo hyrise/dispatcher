@@ -343,12 +343,12 @@ int request_on_message_complete_callback(http_parser *parser) {
     sprintf(write_buffer, http_response, status, http_reason_phrase(status), strlen(payload));
 
     ssize_t send_size = send_all(data->client_socket , write_buffer, strlen(write_buffer), 0);
-    if (send_size != strlen(write_buffer)) {
+    if (send_size != (ssize_t)strlen(write_buffer)) {
         log_err("send_size != data_size");
     }
     debug("SEND: '''%s'''", write_buffer);
     send_size = send_all(data->client_socket, payload, strlen(payload), 0);
-    if (send_size != strlen(payload)) {
+    if (send_size != (ssize_t)strlen(payload)) {
         log_err("send_size != data_size");
     }
     debug("SEND: '''%s'''", payload);
@@ -529,7 +529,7 @@ void Dispatcher::handle_connection(int client_socket) {
                         }
                     }
                     size_t nparsed = http_parser_execute(new_request_parser, &settings, request_data->buffer + request_data->buffer_offset, data_size);
-                    if (nparsed != data_size) {
+                    if ((ssize_t)nparsed != data_size) {
                         log_err("%s\n", http_errno_name(static_cast<enum http_errno>(new_request_parser->http_errno)));
                         log_err("%s\n", http_errno_description(static_cast<enum http_errno>(new_request_parser->http_errno)));
                         break;
@@ -580,7 +580,7 @@ void Dispatcher::handle_connection(int client_socket) {
                     debug("Received '''%.*s'''(%lu)", (int)data_size, response_data->buffer, data_size);
 
                     size_t nparsed = http_parser_execute(db_response_parser, &response_settings, response_data->buffer, data_size);
-                    if (nparsed != data_size) {
+                    if ((ssize_t)nparsed != data_size) {
                         log_err("%s\n", http_errno_name(static_cast<enum http_errno>(db_response_parser->http_errno)));
                         log_err("%s\n", http_errno_description(static_cast<enum http_errno>(db_response_parser->http_errno)));
                         break;
@@ -658,7 +658,7 @@ void Dispatcher::send_to_db_node_async(struct request_parser_data *data, int nod
     sprintf(write_buffer, http_request, data->url_length, data->url_start, data->payload_length, data->payload_length, data->payload_start);
 
     ssize_t send_size = send_all(db_socket , write_buffer, strlen(write_buffer), 0);
-    if (send_size != strlen(write_buffer)) {
+    if (send_size != (ssize_t)strlen(write_buffer)) {
         log_err("send_size != data_size");
     }
     debug("SEND: '''%s'''(%lu)", write_buffer, strlen(write_buffer));

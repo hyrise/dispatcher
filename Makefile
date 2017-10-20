@@ -1,7 +1,7 @@
 OBJS = Dispatcher.o jsoncpp.o http-parser/http_parser.o
 CXX = g++
-CXXFLAGS = -Wall -std=c++11 -g -O3
-CFLAGS = -Wall -g -O3
+CXXFLAGS = -Wall -std=c++11 -g -O3 -Wsign-compare
+CFLAGS = -Wall -g -O3 -Wsign-compare
 LDLIBS = -lpthread
 INCLUDEPATHS = ./jsoncpp
 

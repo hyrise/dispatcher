@@ -36,7 +36,7 @@ ssize_t send_all(int socket, const void *buffer, size_t length, int flags) {
     ssize_t offset = 0;
     ssize_t sent_bytes = 0;
 
-    while (offset != length) {
+    while (offset != (ssize_t)length) {
         sent_bytes = send(socket, buffer + offset, length - offset, flags);
         if (sent_bytes < 0) {
             switch (errno) {
@@ -56,7 +56,7 @@ ssize_t read_all(int socket, void *buffer, size_t length) {
     ssize_t offset = 0;
     ssize_t read_bytes = 0;
 
-    while (offset != length) {
+    while (offset != (ssize_t)length) {
         read_bytes = read(socket, buffer + offset, length - offset);
         if (read_bytes < 0) {
             switch (errno) {
@@ -532,7 +532,7 @@ Content-Length: %d\r\n\r\n\
         log_err("Send request.");
         exit(EXIT_FAILURE);
     }
-    if (sent_bytes != strlen(buf)) {
+    if (sent_bytes != (ssize_t)strlen(buf)) {
         log_err("ERROR: send was short. %zd of %lu bytes", sent_bytes, strlen(buf));
     }
     debug("SEND\n%s\n", buf);
